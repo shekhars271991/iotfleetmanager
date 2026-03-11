@@ -13,11 +13,15 @@ import os
 import re
 import json
 import time
+import pickle
 import logging
+import threading
 from datetime import datetime, timezone
 
+import aerospike
 import httpx
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.aerospike import AerospikeSaver
 
 from app.agent.state import InvestigationState
 from app.agent.tools import InvestigationTools
@@ -31,6 +35,68 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
 _as_client_ref = None
 _as_namespace_ref = None
+
+_checkpoint_local = threading.local()
+
+
+def _drain_checkpoint_calls() -> list:
+    calls = getattr(_checkpoint_local, "calls", [])
+    _checkpoint_local.calls = []
+    return calls
+
+
+def _track_call(op, key, success, elapsed, error=None):
+    calls = getattr(_checkpoint_local, "calls", None)
+    if calls is not None:
+        entry = {
+            "op": op, "set": key[1], "key": str(key[2])[:40],
+            "caller": "checkpointer", "ms": elapsed, "success": success,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
+        if error:
+            entry["error"] = str(error)[:100]
+        calls.append(entry)
+
+
+class TrackedAerospikeSaver(AerospikeSaver):
+    """Stores all checkpoint data as pickled blobs to avoid CDT serialization issues."""
+
+    def _put(self, key, bins):
+        t0 = time.perf_counter()
+        try:
+            meta = None
+            if self._ttl_minutes is not None and self._ttl_minutes > 0:
+                meta = {"ttl": int(self._ttl_minutes) * 60}
+            self.client.put(key, {"_pk": pickle.dumps(bins)}, meta)
+            _track_call("put", key, True, round((time.perf_counter() - t0) * 1000, 2))
+        except Exception as e:
+            _track_call("put", key, False, round((time.perf_counter() - t0) * 1000, 2), e)
+            raise
+
+    def _get(self, key):
+        t0 = time.perf_counter()
+        try:
+            rec = self.client.get(key)
+        except aerospike.exception.RecordNotFound:
+            _track_call("get", key, True, round((time.perf_counter() - t0) * 1000, 2))
+            return None
+        except Exception as e:
+            _track_call("get", key, False, round((time.perf_counter() - t0) * 1000, 2), e)
+            raise
+
+        elapsed = round((time.perf_counter() - t0) * 1000, 2)
+        _track_call("get", key, True, elapsed)
+
+        if self._refresh_on_read and self._ttl_minutes is not None and self._ttl_minutes > 0:
+            try:
+                self.client.touch(key, int(self._ttl_minutes) * 60)
+            except aerospike.exception.AerospikeError:
+                pass
+
+        k, meta, raw = rec
+        if "_pk" in raw:
+            return (k, meta, pickle.loads(raw["_pk"]))
+        return (k, meta, raw)
 
 
 def _get_gemini_api_key() -> str:
@@ -201,16 +267,83 @@ def _build_context_summary(state: InvestigationState) -> str:
     return "\n".join(lines)
 
 
+def _flush_progress(as_client, namespace, inv_id, messages, tool_calls_list, iteration, db_calls_list=None):
+    """Write current agent progress to Aerospike so the frontend can poll it."""
+    try:
+        if db_calls_list is not None:
+            db_calls_list.extend(_drain_checkpoint_calls())
+        key = (namespace, "investigations", inv_id)
+        bins = {
+            "agent_msgs": json.dumps(messages, default=str),
+            "tool_detail": json.dumps(tool_calls_list, default=str),
+            "iterations": iteration,
+            "tool_calls": len(tool_calls_list),
+        }
+        if db_calls_list is not None:
+            bins["db_calls"] = json.dumps(db_calls_list, default=str)
+        as_client.put(key, bins)
+    except Exception as e:
+        logger.debug(f"Progress flush failed (non-fatal): {e}")
+
+
 # ---- Node 1: Collect Context ----
+
+def _tracked_get(as_client, key, db_calls, caller=""):
+    """Aerospike get() with timing tracking for context collection."""
+    t0 = time.perf_counter()
+    try:
+        result = as_client.get(key)
+        elapsed = round((time.perf_counter() - t0) * 1000, 2)
+        db_calls.append({
+            "op": "get", "set": key[1], "key": key[2],
+            "caller": caller, "ms": elapsed, "success": True,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+        return result
+    except Exception as e:
+        elapsed = round((time.perf_counter() - t0) * 1000, 2)
+        db_calls.append({
+            "op": "get", "set": key[1], "key": key[2],
+            "caller": caller, "ms": elapsed, "success": False, "error": str(e),
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+        raise
+
+
+def _tracked_scan(as_client, namespace, as_set, db_calls, caller=""):
+    """Aerospike query/scan with timing tracking for context collection."""
+    t0 = time.perf_counter()
+    try:
+        query = as_client.query(namespace, as_set)
+        records = []
+        query.foreach(lambda r: records.append(r[2]))
+        elapsed = round((time.perf_counter() - t0) * 1000, 2)
+        db_calls.append({
+            "op": "scan", "set": as_set, "rows": len(records),
+            "caller": caller, "ms": elapsed, "success": True,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+        return records
+    except Exception as e:
+        elapsed = round((time.perf_counter() - t0) * 1000, 2)
+        db_calls.append({
+            "op": "scan", "set": as_set, "rows": 0,
+            "caller": caller, "ms": elapsed, "success": False, "error": str(e),
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+        raise
+
 
 def collect_context_node(state: InvestigationState, as_client, namespace: str) -> dict:
     device_id = state["device_id"]
     alert_id = state["alert_id"]
+    inv_id = state["investigation_id"]
+    db_calls = list(state.get("db_calls") or [])
 
     # Load device
     device_info = {}
     try:
-        _, _, bins = as_client.get((namespace, "devices", device_id))
+        _, _, bins = _tracked_get(as_client, (namespace, "devices", device_id), db_calls, "collect_context:device")
         device_info = dict(bins)
     except Exception:
         pass
@@ -218,7 +351,7 @@ def collect_context_node(state: InvestigationState, as_client, namespace: str) -
     # Load alert
     alert_info = {}
     try:
-        _, _, bins = as_client.get((namespace, "alerts", alert_id))
+        _, _, bins = _tracked_get(as_client, (namespace, "alerts", alert_id), db_calls, "collect_context:alert")
         alert_info = dict(bins)
     except Exception:
         pass
@@ -228,7 +361,7 @@ def collect_context_node(state: InvestigationState, as_client, namespace: str) -
     group_id = device_info.get("group_id", "")
     if group_id:
         try:
-            _, _, bins = as_client.get((namespace, "groups", group_id))
+            _, _, bins = _tracked_get(as_client, (namespace, "groups", group_id), db_calls, "collect_context:group")
             group_info = dict(bins)
         except Exception:
             pass
@@ -236,13 +369,16 @@ def collect_context_node(state: InvestigationState, as_client, namespace: str) -
     # Load group devices
     group_devices = []
     if group_id:
-        dq = as_client.query(namespace, "devices")
-        dq.foreach(lambda r: group_devices.append({"id": r[2].get("id"), "name": r[2].get("name"), "status": r[2].get("status"), "type": r[2].get("type")}) if r[2].get("group_id") == group_id else None)
+        all_devs = _tracked_scan(as_client, namespace, "devices", db_calls, "collect_context:group_devices")
+        group_devices = [
+            {"id": d.get("id"), "name": d.get("name"), "status": d.get("status"), "type": d.get("type"),
+             "latitude": d.get("latitude"), "longitude": d.get("longitude"),
+             "redun_group": d.get("redun_group", ""), "redundancy_group": d.get("redundancy_group", "")}
+            for d in all_devs if d.get("group_id") == group_id
+        ]
 
     # Load recent telemetry
-    tq = as_client.query(namespace, "telemetry")
-    all_telem = []
-    tq.foreach(lambda r: all_telem.append(r[2]))
+    all_telem = _tracked_scan(as_client, namespace, "telemetry", db_calls, "collect_context:telemetry")
     telemetry = sorted(
         [t for t in all_telem if t.get("device_id") == device_id],
         key=lambda t: t.get("timestamp", ""),
@@ -250,9 +386,7 @@ def collect_context_node(state: InvestigationState, as_client, namespace: str) -
     )[:30]
 
     # Load active rules for this device/group
-    rq = as_client.query(namespace, "rules")
-    rules = []
-    rq.foreach(lambda r: rules.append(r[2]))
+    rules = _tracked_scan(as_client, namespace, "rules", db_calls, "collect_context:rules")
     active_rules = [
         r for r in rules
         if r.get("enabled") and (
@@ -270,9 +404,7 @@ def collect_context_node(state: InvestigationState, as_client, namespace: str) -
             if gd_rg == rg and gd.get("id") != device_id:
                 redundancy_peers.append(gd)
         if not redundancy_peers:
-            all_devs_q = as_client.query(namespace, "devices")
-            all_devs = []
-            all_devs_q.foreach(lambda r: all_devs.append(r[2]))
+            all_devs = _tracked_scan(as_client, namespace, "devices", db_calls, "collect_context:redundancy_scan")
             for d in all_devs:
                 d_rg = d.get("redun_group", "") or d.get("redundancy_group", "")
                 if d_rg == rg and d.get("id") != device_id and d.get("status") != "decommissioned":
@@ -297,6 +429,8 @@ def collect_context_node(state: InvestigationState, as_client, namespace: str) -
                     nearby_devices.append({**gd, "distance_km": round(dist, 3)})
         nearby_devices.sort(key=lambda x: x.get("distance_km", 999))
 
+    _flush_progress(as_client, namespace, inv_id, [], [], 0, db_calls)
+
     return {
         "device_info": device_info,
         "alert_info": alert_info,
@@ -306,6 +440,7 @@ def collect_context_node(state: InvestigationState, as_client, namespace: str) -
         "active_rules": active_rules,
         "redundancy_peers": redundancy_peers,
         "nearby_devices": nearby_devices[:10],
+        "db_calls": db_calls,
         "status": "analyzing",
     }
 
@@ -357,28 +492,12 @@ def _parse_action_response(response: str):
     return None, {}, ""
 
 
-def _flush_progress(as_client, namespace, inv_id, messages, tool_calls_list, iteration, db_calls_list=None):
-    """Write current agent progress to Aerospike so the frontend can poll it."""
-    try:
-        key = (namespace, "investigations", inv_id)
-        bins = {
-            "agent_msgs": json.dumps(messages, default=str),
-            "tool_detail": json.dumps(tool_calls_list, default=str),
-            "iterations": iteration,
-            "tool_calls": len(tool_calls_list),
-        }
-        if db_calls_list is not None:
-            bins["db_calls"] = json.dumps(db_calls_list, default=str)
-        as_client.put(key, bins)
-    except Exception as e:
-        logger.debug(f"Progress flush failed (non-fatal): {e}")
-
-
 def llm_agent_node(state: InvestigationState, as_client, namespace: str) -> dict:
     if not _get_gemini_api_key():
         raise RuntimeError("Gemini API key is not configured. Set it in Admin > Settings or export GEMINI_API_KEY.")
 
     tools = InvestigationTools(as_client, namespace)
+    tools.db_calls = list(state.get("db_calls") or [])
     context = _build_context_summary(state)
     device_id = state["device_id"]
     inv_id = state["investigation_id"]
@@ -623,10 +742,18 @@ def save_report_node(state: InvestigationState, as_client, namespace: str) -> di
 # ---- Workflow Builder ----
 
 def create_investigation_workflow(as_client, namespace: str):
-    """Create and compile the LangGraph investigation workflow."""
+    """Create and compile the LangGraph investigation workflow with Aerospike checkpointer."""
     global _as_client_ref, _as_namespace_ref
     _as_client_ref = as_client
     _as_namespace_ref = namespace
+
+    checkpointer = TrackedAerospikeSaver(
+        client=as_client,
+        namespace=namespace,
+        set_cp="lg_cp",
+        set_writes="lg_cp_w",
+        set_meta="lg_cp_meta",
+    )
 
     workflow = StateGraph(InvestigationState)
 
@@ -639,14 +766,16 @@ def create_investigation_workflow(as_client, namespace: str):
     workflow.add_edge("llm_agent", "save_report")
     workflow.add_edge("save_report", END)
 
-    compiled = workflow.compile()
-    logger.info("Investigation workflow compiled")
+    compiled = workflow.compile(checkpointer=checkpointer)
+    logger.info("Investigation workflow compiled with Aerospike checkpointer")
 
     return compiled
 
 
 def run_investigation_sync(workflow, investigation_id: str, alert_id: str, device_id: str) -> dict:
     """Run the investigation workflow synchronously (called from background thread)."""
+    _checkpoint_local.calls = []
+
     initial_state: InvestigationState = {
         "investigation_id": investigation_id,
         "alert_id": alert_id,
@@ -654,6 +783,15 @@ def run_investigation_sync(workflow, investigation_id: str, alert_id: str, devic
         "status": "running",
     }
 
-    config = {"recursion_limit": 30}
+    config = {
+        "recursion_limit": 30,
+        "configurable": {"thread_id": investigation_id},
+    }
     result = workflow.invoke(initial_state, config)
+
+    remaining_cp_calls = _drain_checkpoint_calls()
+    if remaining_cp_calls:
+        existing = result.get("db_calls") or []
+        result["db_calls"] = existing + remaining_cp_calls
+
     return result
