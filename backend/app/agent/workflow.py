@@ -357,16 +357,19 @@ def _parse_action_response(response: str):
     return None, {}, ""
 
 
-def _flush_progress(as_client, namespace, inv_id, messages, tool_calls_list, iteration):
+def _flush_progress(as_client, namespace, inv_id, messages, tool_calls_list, iteration, db_calls_list=None):
     """Write current agent progress to Aerospike so the frontend can poll it."""
     try:
         key = (namespace, "investigations", inv_id)
-        as_client.put(key, {
+        bins = {
             "agent_msgs": json.dumps(messages, default=str),
             "tool_detail": json.dumps(tool_calls_list, default=str),
             "iterations": iteration,
             "tool_calls": len(tool_calls_list),
-        })
+        }
+        if db_calls_list is not None:
+            bins["db_calls"] = json.dumps(db_calls_list, default=str)
+        as_client.put(key, bins)
     except Exception as e:
         logger.debug(f"Progress flush failed (non-fatal): {e}")
 
@@ -454,7 +457,7 @@ Respond with ONLY your analysis text. No JSON. No tool calls."""
                 "content": analysis_response.strip(),
                 "ts": datetime.now(timezone.utc).isoformat(),
             })
-            _flush_progress(as_client, namespace, inv_id, messages, tool_calls, iteration)
+            _flush_progress(as_client, namespace, inv_id, messages, tool_calls, iteration, tools.db_calls)
 
         # ---- PHASE 2: ACT — decide next tool call or submit conclusion ----
         remaining_calls = MAX_TOOL_CALLS - len(tool_calls)
@@ -510,7 +513,7 @@ Respond with ONLY a JSON object:
             "content": action_response.strip(),
             "ts": datetime.now(timezone.utc).isoformat(),
         })
-        _flush_progress(as_client, namespace, inv_id, messages, tool_calls, iteration)
+        _flush_progress(as_client, namespace, inv_id, messages, tool_calls, iteration, tools.db_calls)
 
         tool_name, params, reasoning = _parse_action_response(action_response)
         if not tool_name:
@@ -532,6 +535,7 @@ Respond with ONLY a JSON object:
                 },
                 "agent_messages": messages,
                 "tool_calls": tool_calls,
+                "db_calls": tools.db_calls,
                 "iterations": iteration,
                 "status": "saving",
             }
@@ -556,7 +560,7 @@ Respond with ONLY a JSON object:
             "content": result_json[:2000],
             "ts": datetime.now(timezone.utc).isoformat(),
         })
-        _flush_progress(as_client, namespace, inv_id, messages, tool_calls, iteration)
+        _flush_progress(as_client, namespace, inv_id, messages, tool_calls, iteration, tools.db_calls)
 
     if last_llm_error:
         raise RuntimeError(f"Gemini API error: {last_llm_error}")
@@ -573,6 +577,7 @@ Respond with ONLY a JSON object:
         },
         "agent_messages": messages,
         "tool_calls": tool_calls,
+        "db_calls": tools.db_calls,
         "iterations": MAX_ITERATIONS,
         "status": "saving",
     }
@@ -601,6 +606,7 @@ def save_report_node(state: InvestigationState, as_client, namespace: str) -> di
         "completed_at": datetime.now(timezone.utc).isoformat(),
         "agent_msgs": json.dumps(state.get("agent_messages", []), default=str),
         "tool_detail": json.dumps(state.get("tool_calls", []), default=str),
+        "db_calls": json.dumps(state.get("db_calls", []), default=str),
     }
 
     # Load existing record to preserve created_at

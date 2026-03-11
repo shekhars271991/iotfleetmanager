@@ -59,6 +59,7 @@ def _inv_bins_to_dict(bins: dict, include_trace: bool = False) -> dict:
     if include_trace:
         out["agent_messages"] = _safe_json_parse(bins.get("agent_msgs", "[]"))
         out["tool_calls_detail"] = _safe_json_parse(bins.get("tool_detail", "[]"))
+        out["db_calls"] = _safe_json_parse(bins.get("db_calls", "[]"))
     return out
 
 

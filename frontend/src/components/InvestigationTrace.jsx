@@ -325,10 +325,96 @@ function TraceStep({ step, idx, expanded, toggle }) {
 }
 
 
+function DbCallsPanel({ dbCalls, isRunning }) {
+  if (!dbCalls || dbCalls.length === 0) {
+    return (
+      <div className="py-6 text-center">
+        {isRunning
+          ? <p className="text-[13px] text-slate-500">DB calls will appear here as the agent queries data...</p>
+          : <p className="text-[13px] text-slate-400">No DB call data recorded for this investigation.</p>}
+      </div>
+    )
+  }
+
+  const totalMs = dbCalls.reduce((s, c) => s + (c.ms || 0), 0)
+  const avgMs = totalMs / dbCalls.length
+  const failedCount = dbCalls.filter(c => !c.success).length
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-4 gap-2">
+        <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 text-center">
+          <p className="text-[18px] font-bold text-slate-800">{dbCalls.length}</p>
+          <p className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Total Calls</p>
+        </div>
+        <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-center">
+          <p className="text-[18px] font-bold text-blue-700">{totalMs.toFixed(1)}<span className="text-[11px] font-normal ml-0.5">ms</span></p>
+          <p className="text-[10px] text-blue-400 uppercase tracking-wider font-medium">Total Time</p>
+        </div>
+        <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 text-center">
+          <p className="text-[18px] font-bold text-indigo-700">{avgMs.toFixed(1)}<span className="text-[11px] font-normal ml-0.5">ms</span></p>
+          <p className="text-[10px] text-indigo-400 uppercase tracking-wider font-medium">Avg Time</p>
+        </div>
+        <div className={`border rounded-lg px-3 py-2 text-center ${failedCount > 0 ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}>
+          <p className={`text-[18px] font-bold ${failedCount > 0 ? 'text-red-700' : 'text-emerald-700'}`}>{failedCount > 0 ? failedCount : '0'}</p>
+          <p className={`text-[10px] uppercase tracking-wider font-medium ${failedCount > 0 ? 'text-red-400' : 'text-emerald-400'}`}>Failed</p>
+        </div>
+      </div>
+
+      <div className="border border-slate-200 rounded-lg overflow-hidden">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-200">
+              <th className="text-left px-3 py-2 font-semibold text-slate-500 text-[10px] uppercase tracking-wider">#</th>
+              <th className="text-left px-3 py-2 font-semibold text-slate-500 text-[10px] uppercase tracking-wider">Operation</th>
+              <th className="text-left px-3 py-2 font-semibold text-slate-500 text-[10px] uppercase tracking-wider">Set</th>
+              <th className="text-left px-3 py-2 font-semibold text-slate-500 text-[10px] uppercase tracking-wider">Caller</th>
+              <th className="text-right px-3 py-2 font-semibold text-slate-500 text-[10px] uppercase tracking-wider">Detail</th>
+              <th className="text-right px-3 py-2 font-semibold text-slate-500 text-[10px] uppercase tracking-wider">Time</th>
+              <th className="text-center px-3 py-2 font-semibold text-slate-500 text-[10px] uppercase tracking-wider">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dbCalls.map((call, i) => (
+              <tr key={i} className={`border-b border-slate-100 last:border-b-0 ${!call.success ? 'bg-red-50/40' : i % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
+                <td className="px-3 py-1.5 text-slate-400 font-mono">{i + 1}</td>
+                <td className="px-3 py-1.5">
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${call.op === 'get' ? 'bg-cyan-100 text-cyan-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {call.op}
+                  </span>
+                </td>
+                <td className="px-3 py-1.5 font-mono text-slate-700">{call.set}</td>
+                <td className="px-3 py-1.5 text-slate-500 font-mono text-[11px]">{call.caller || '—'}</td>
+                <td className="px-3 py-1.5 text-right text-slate-500">
+                  {call.op === 'get' ? <span className="font-mono text-[11px]">{call.key}</span> : <span className="text-[11px]">{call.rows} rows</span>}
+                </td>
+                <td className="px-3 py-1.5 text-right font-mono">
+                  <span className={`${call.ms > 100 ? 'text-red-600 font-bold' : call.ms > 30 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    {call.ms?.toFixed(1)} ms
+                  </span>
+                </td>
+                <td className="px-3 py-1.5 text-center">
+                  {call.success
+                    ? <span className="w-4 h-4 inline-flex items-center justify-center rounded-full bg-emerald-100"><svg className="w-2.5 h-2.5 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></span>
+                    : <span className="w-4 h-4 inline-flex items-center justify-center rounded-full bg-red-100"><svg className="w-2.5 h-2.5 text-red-600" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg></span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {isRunning && <p className="text-[11px] text-amber-500 text-center">Updating live as agent runs...</p>}
+    </div>
+  )
+}
+
+
 export default function InvestigationTrace({ invId, status }) {
   const [traceData, setTraceData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [expandedSteps, setExpandedSteps] = useState({})
+  const [traceTab, setTraceTab] = useState('reasoning')
   const bottomRef = useRef(null)
   const prevStepCount = useRef(0)
   const isRunning = status === 'running'
@@ -357,12 +443,13 @@ export default function InvestigationTrace({ invId, status }) {
     return () => clearInterval(poll)
   }, [invId, isRunning])
 
-  useEffect(() => { setTraceData(null); setExpandedSteps({}); prevStepCount.current = 0 }, [invId])
+  useEffect(() => { setTraceData(null); setExpandedSteps({}); setTraceTab('reasoning'); prevStepCount.current = 0 }, [invId])
 
   const toggleStep = (idx) => setExpandedSteps(prev => ({ ...prev, [idx]: !prev[idx] }))
 
   const messages = traceData?.agent_messages || []
   const toolDetails = traceData?.tool_calls_detail || []
+  const dbCalls = traceData?.db_calls || []
   const steps = buildTraceSteps(messages, toolDetails)
   const analysisCount = steps.filter(s => s.type === 'analysis').length
   const toolCallCount = steps.filter(s => s.type === 'tool_call' || s.type === 'tool_result').length / 2
@@ -402,12 +489,26 @@ export default function InvestigationTrace({ invId, status }) {
   }
 
   return (
-    <div className="space-y-0">
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Agent Reasoning Trace</h4>
-        <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{steps.length} steps</span>
-        {analysisCount > 0 && <span className="text-[10px] text-violet-500 bg-violet-50 px-1.5 py-0.5 rounded">{analysisCount} reasoning</span>}
-        {toolCallCount > 0 && <span className="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">{Math.round(toolCallCount)} tool calls</span>}
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex gap-1 p-0.5 bg-slate-100 rounded-lg">
+          <button onClick={() => setTraceTab('reasoning')} className={`px-3 py-1.5 text-[11px] font-medium rounded-md transition-all ${traceTab === 'reasoning' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            Reasoning Trace
+          </button>
+          <button onClick={() => setTraceTab('db')} className={`px-3 py-1.5 text-[11px] font-medium rounded-md transition-all flex items-center gap-1.5 ${traceTab === 'db' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" /></svg>
+            DB Calls
+            {dbCalls.length > 0 && <span className="text-[9px] font-bold bg-blue-100 text-blue-600 rounded px-1 py-0.5">{dbCalls.length}</span>}
+          </button>
+        </div>
+
+        {traceTab === 'reasoning' && (
+          <>
+            <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{steps.length} steps</span>
+            {analysisCount > 0 && <span className="text-[10px] text-violet-500 bg-violet-50 px-1.5 py-0.5 rounded">{analysisCount} reasoning</span>}
+            {toolCallCount > 0 && <span className="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">{Math.round(toolCallCount)} tool calls</span>}
+          </>
+        )}
         {isRunning && (
           <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded flex items-center gap-1">
             <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
@@ -415,25 +516,32 @@ export default function InvestigationTrace({ invId, status }) {
           </span>
         )}
       </div>
-      <div className="relative">
-        <div className="absolute left-[15px] top-0 bottom-0 w-px bg-slate-200" />
-        <div className="space-y-0">
-          {steps.map((step, idx) => (
-            <TraceStep key={idx} step={step} idx={idx} expanded={!!expandedSteps[idx]} toggle={() => toggleStep(idx)} />
-          ))}
-          {isRunning && (
-            <div className="relative pl-9 pb-3">
-              <div className="absolute left-[8px] top-2 w-[15px] h-[15px] rounded-full bg-amber-100 ring-2 ring-white z-10 flex items-center justify-center">
-                <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+
+      {traceTab === 'reasoning' && (
+        <div className="relative">
+          <div className="absolute left-[15px] top-0 bottom-0 w-px bg-slate-200" />
+          <div className="space-y-0">
+            {steps.map((step, idx) => (
+              <TraceStep key={idx} step={step} idx={idx} expanded={!!expandedSteps[idx]} toggle={() => toggleStep(idx)} />
+            ))}
+            {isRunning && (
+              <div className="relative pl-9 pb-3">
+                <div className="absolute left-[8px] top-2 w-[15px] h-[15px] rounded-full bg-amber-100 ring-2 ring-white z-10 flex items-center justify-center">
+                  <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                </div>
+                <div className="rounded-lg border border-amber-200/60 bg-amber-50/50 px-3.5 py-2.5">
+                  <span className="text-[12px] text-amber-600 font-medium">Agent is thinking...</span>
+                </div>
               </div>
-              <div className="rounded-lg border border-amber-200/60 bg-amber-50/50 px-3.5 py-2.5">
-                <span className="text-[12px] text-amber-600 font-medium">Agent is thinking...</span>
-              </div>
-            </div>
-          )}
-          <div ref={bottomRef} />
+            )}
+            <div ref={bottomRef} />
+          </div>
         </div>
-      </div>
+      )}
+
+      {traceTab === 'db' && (
+        <DbCallsPanel dbCalls={dbCalls} isRunning={isRunning} />
+      )}
     </div>
   )
 }

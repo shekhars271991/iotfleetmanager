@@ -22,6 +22,7 @@ class InvestigationState(TypedDict, total=False):
     # Agent node state
     agent_messages: list
     tool_calls: list
+    db_calls: list
     iterations: int
     evidence: dict
 

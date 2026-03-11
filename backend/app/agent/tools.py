@@ -2,6 +2,7 @@
 
 import json
 import math
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
@@ -82,6 +83,51 @@ class InvestigationTools:
         self.client = as_client
         self.ns = namespace
         self.call_log = []
+        self.db_calls = []
+
+    def _tracked_get(self, key, caller: str = ""):
+        """Aerospike get() with timing tracking."""
+        t0 = time.perf_counter()
+        try:
+            result = self.client.get(key)
+            elapsed = round((time.perf_counter() - t0) * 1000, 2)
+            self.db_calls.append({
+                "op": "get", "set": key[1], "key": key[2],
+                "caller": caller, "ms": elapsed, "success": True,
+                "ts": datetime.now(timezone.utc).isoformat(),
+            })
+            return result
+        except Exception as e:
+            elapsed = round((time.perf_counter() - t0) * 1000, 2)
+            self.db_calls.append({
+                "op": "get", "set": key[1], "key": key[2],
+                "caller": caller, "ms": elapsed, "success": False, "error": str(e),
+                "ts": datetime.now(timezone.utc).isoformat(),
+            })
+            raise
+
+    def _tracked_scan(self, as_set: str, caller: str = "") -> list:
+        """Aerospike query/scan with timing tracking."""
+        t0 = time.perf_counter()
+        try:
+            query = self.client.query(self.ns, as_set)
+            records = []
+            query.foreach(lambda r: records.append(r[2]))
+            elapsed = round((time.perf_counter() - t0) * 1000, 2)
+            self.db_calls.append({
+                "op": "scan", "set": as_set, "rows": len(records),
+                "caller": caller, "ms": elapsed, "success": True,
+                "ts": datetime.now(timezone.utc).isoformat(),
+            })
+            return records
+        except Exception as e:
+            elapsed = round((time.perf_counter() - t0) * 1000, 2)
+            self.db_calls.append({
+                "op": "scan", "set": as_set, "rows": 0,
+                "caller": caller, "ms": elapsed, "success": False, "error": str(e),
+                "ts": datetime.now(timezone.utc).isoformat(),
+            })
+            raise
 
     def execute(self, tool_name: str, params: dict) -> dict:
         dispatch = {
@@ -112,7 +158,7 @@ class InvestigationTools:
     # --- helpers ---
 
     def _load_device(self, device_id: str) -> dict:
-        _, _, bins = self.client.get((self.ns, "devices", device_id))
+        _, _, bins = self._tracked_get((self.ns, "devices", device_id), caller="_load_device")
         d = dict(bins)
         d["tags"] = _safe_json(d.get("tags"))
         if "redun_group" in d:
@@ -120,9 +166,7 @@ class InvestigationTools:
         return d
 
     def _load_all_devices(self) -> list:
-        query = self.client.query(self.ns, "devices")
-        records = []
-        query.foreach(lambda r: records.append(r[2]))
+        records = self._tracked_scan("devices", caller="_load_all_devices")
         for d in records:
             d["tags"] = _safe_json(d.get("tags"))
             if "redun_group" in d:
@@ -131,9 +175,7 @@ class InvestigationTools:
 
     def _load_telemetry(self, minutes: int, device_ids: set = None) -> list:
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
-        query = self.client.query(self.ns, "telemetry")
-        records = []
-        query.foreach(lambda r: records.append(r[2]))
+        records = self._tracked_scan("telemetry", caller="_load_telemetry")
         out = []
         for r in records:
             if r.get("timestamp", "") < cutoff:
@@ -173,9 +215,7 @@ class InvestigationTools:
         hours = int(params.get("hours", 24))
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
 
-        query = self.client.query(self.ns, "alerts")
-        records = []
-        query.foreach(lambda r: records.append(r[2]))
+        records = self._tracked_scan("alerts", caller="get_device_alerts")
 
         alerts = [a for a in records if a.get("device_id") == device_id and a.get("created_at", "") >= cutoff]
         alerts.sort(key=lambda a: a.get("created_at", ""), reverse=True)
@@ -287,9 +327,7 @@ class InvestigationTools:
         group_devices = {d.get("id"): d.get("name", "") for d in all_devices
                          if d.get("group_id") == group_id and d.get("id") != device_id}
 
-        aq = self.client.query(self.ns, "alerts")
-        all_alerts = []
-        aq.foreach(lambda r: all_alerts.append(r[2]))
+        all_alerts = self._tracked_scan("alerts", caller="check_correlated_alerts")
 
         correlated = {}
         for a in all_alerts:
@@ -404,9 +442,7 @@ class InvestigationTools:
                     "group_id": d.get("group_id", ""),
                 })
 
-        aq = self.client.query(self.ns, "alerts")
-        all_alerts = []
-        aq.foreach(lambda r: all_alerts.append(r[2]))
+        all_alerts = self._tracked_scan("alerts", caller="find_nearby_devices")
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         nearby_ids = {d["id"] for d in nearby}
         alert_counts = {}
