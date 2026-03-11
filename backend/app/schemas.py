@@ -86,7 +86,12 @@ class DashboardStats(BaseModel):
     decommissioned: int = 0
     issues_count: int
     by_type: dict[str, int] = {}
+    by_metric_type: dict[str, int] = {}
     groups: list[dict] = []
+    alerts_summary: dict = {}
+    investigations_summary: dict = {}
+    active_rules: int = 0
+    active_simulations: int = 0
 
 
 class TelemetryOut(BaseModel):

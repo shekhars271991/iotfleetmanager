@@ -71,12 +71,24 @@ const DefaultToolIcon = (
   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437 1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008Z" /></svg>
 )
 
-const BrainIcon = (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" /></svg>
+const LlmIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" /></svg>
+)
+
+const ToolCallIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437 1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008Z" /></svg>
+)
+
+const ToolResultIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" /></svg>
+)
+
+const ThoughtIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" /></svg>
 )
 
 const CheckIcon = (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
 )
 
 const ChevronIcon = ({ expanded }) => (
@@ -198,16 +210,16 @@ function ToolResultPreview({ result }) {
 function TraceStep({ step, idx, expanded, toggle }) {
   if (step.type === 'analysis') {
     return (
-      <div className="relative pl-9 pb-3">
-        <div className="absolute left-[8px] top-2 w-[15px] h-[15px] rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 ring-2 ring-white z-10 flex items-center justify-center text-white">
-          {BrainIcon}
+      <div className="relative pl-10 pb-3">
+        <div className="absolute left-[3px] top-1.5 w-[24px] h-[24px] rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 ring-2 ring-violet-100 z-10 flex items-center justify-center text-white shadow-sm">
+          {LlmIcon}
         </div>
         <button onClick={toggle} className="w-full text-left">
           <div className="rounded-lg border border-violet-200/60 bg-gradient-to-r from-violet-50/80 to-indigo-50/40 overflow-hidden">
             <div className="px-3.5 py-2.5 flex items-start gap-2">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] font-bold text-violet-500 uppercase tracking-wider">LLM Analysis</span>
+                  <span className="text-[10px] font-bold text-violet-500 uppercase tracking-wider">LLM Reasoning</span>
                   {step.ts && <span className="text-[10px] text-slate-300">{new Date(step.ts).toLocaleTimeString()}</span>}
                 </div>
                 <p className={`text-[12px] text-slate-700 leading-relaxed ${expanded ? '' : 'line-clamp-3'}`}>{step.content}</p>
@@ -224,9 +236,9 @@ function TraceStep({ step, idx, expanded, toggle }) {
     const icon = ToolIcons[step.tool] || DefaultToolIcon
     const label = ToolLabels[step.tool] || step.tool
     return (
-      <div className="relative pl-9 pb-3">
-        <div className="absolute left-[8px] top-2 w-[15px] h-[15px] rounded-full bg-slate-700 ring-2 ring-white z-10 flex items-center justify-center text-white">
-          <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m5.25 4.5 7.5 7.5-7.5 7.5m6-15 7.5 7.5-7.5 7.5" /></svg>
+      <div className="relative pl-10 pb-3">
+        <div className="absolute left-[3px] top-1.5 w-[24px] h-[24px] rounded-lg bg-gradient-to-br from-slate-600 to-slate-800 ring-2 ring-slate-100 z-10 flex items-center justify-center text-white shadow-sm">
+          {ToolCallIcon}
         </div>
         <button onClick={toggle} className="w-full text-left">
           <div className="rounded-lg border border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm transition-all overflow-hidden">
@@ -256,14 +268,14 @@ function TraceStep({ step, idx, expanded, toggle }) {
   if (step.type === 'tool_result') {
     const color = ToolColors[step.tool] || 'bg-slate-50 text-slate-600 border-slate-200'
     return (
-      <div className="relative pl-9 pb-3">
-        <div className="absolute left-[8px] top-2 w-[15px] h-[15px] rounded-full bg-blue-400 ring-2 ring-white z-10 flex items-center justify-center">
-          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" /></svg>
+      <div className="relative pl-10 pb-3">
+        <div className="absolute left-[3px] top-1.5 w-[24px] h-[24px] rounded-lg bg-gradient-to-br from-blue-400 to-cyan-500 ring-2 ring-blue-100 z-10 flex items-center justify-center text-white shadow-sm">
+          {ToolResultIcon}
         </div>
         <button onClick={toggle} className="w-full text-left">
           <div className="rounded-lg border border-slate-200 bg-white hover:border-blue-200 hover:shadow-sm transition-all overflow-hidden">
             <div className="px-3.5 py-2.5 flex items-center gap-2">
-              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${color}`}>{step.tool}</span>
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${color}`}>{ToolLabels[step.tool] || step.tool}</span>
               <span className="text-[11px] text-slate-400">returned data</span>
               {step.ts && <span className="ml-auto text-[10px] text-slate-300">{new Date(step.ts).toLocaleTimeString()}</span>}
               <ChevronIcon expanded={expanded} />
@@ -287,8 +299,10 @@ function TraceStep({ step, idx, expanded, toggle }) {
 
   if (step.type === 'thought') {
     return (
-      <div className="relative pl-9 pb-3">
-        <div className="absolute left-[8px] top-2 w-[15px] h-[15px] rounded-full bg-slate-300 ring-2 ring-white z-10" />
+      <div className="relative pl-10 pb-3">
+        <div className="absolute left-[3px] top-1.5 w-[24px] h-[24px] rounded-lg bg-gradient-to-br from-slate-200 to-slate-300 ring-2 ring-slate-100 z-10 flex items-center justify-center text-slate-500 shadow-sm">
+          {ThoughtIcon}
+        </div>
         <button onClick={toggle} className="w-full text-left">
           <div className="rounded-lg border border-slate-100 bg-slate-50 overflow-hidden">
             <div className="px-3.5 py-2.5 flex items-start gap-2">
@@ -303,8 +317,8 @@ function TraceStep({ step, idx, expanded, toggle }) {
 
   if (step.type === 'conclusion') {
     return (
-      <div className="relative pl-9 pb-3">
-        <div className="absolute left-[8px] top-2 w-[15px] h-[15px] rounded-full bg-emerald-500 ring-2 ring-white z-10 flex items-center justify-center text-white">
+      <div className="relative pl-10 pb-3">
+        <div className="absolute left-[3px] top-1.5 w-[24px] h-[24px] rounded-lg bg-gradient-to-br from-emerald-500 to-green-600 ring-2 ring-emerald-100 z-10 flex items-center justify-center text-white shadow-sm">
           {CheckIcon}
         </div>
         <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 px-3.5 py-2.5">
@@ -519,15 +533,15 @@ export default function InvestigationTrace({ invId, status }) {
 
       {traceTab === 'reasoning' && (
         <div className="relative">
-          <div className="absolute left-[15px] top-0 bottom-0 w-px bg-slate-200" />
+          <div className="absolute left-[14px] top-0 bottom-0 w-px bg-slate-200" />
           <div className="space-y-0">
             {steps.map((step, idx) => (
               <TraceStep key={idx} step={step} idx={idx} expanded={!!expandedSteps[idx]} toggle={() => toggleStep(idx)} />
             ))}
             {isRunning && (
-              <div className="relative pl-9 pb-3">
-                <div className="absolute left-[8px] top-2 w-[15px] h-[15px] rounded-full bg-amber-100 ring-2 ring-white z-10 flex items-center justify-center">
-                  <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+              <div className="relative pl-10 pb-3">
+                <div className="absolute left-[3px] top-1.5 w-[24px] h-[24px] rounded-lg bg-amber-100 ring-2 ring-amber-50 z-10 flex items-center justify-center shadow-sm">
+                  <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse" />
                 </div>
                 <div className="rounded-lg border border-amber-200/60 bg-amber-50/50 px-3.5 py-2.5">
                   <span className="text-[12px] text-amber-600 font-medium">Agent is thinking...</span>
