@@ -24,8 +24,8 @@ from app.agent.tools import InvestigationTools
 
 logger = logging.getLogger("investigation.workflow")
 
-MAX_ITERATIONS = 12
-MAX_TOOL_CALLS = 10
+MAX_ITERATIONS = 20
+MAX_TOOL_CALLS = 15
 
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
@@ -312,76 +312,210 @@ def collect_context_node(state: InvestigationState, as_client, namespace: str) -
 
 # ---- Node 2: LLM Agent ----
 
+def _parse_action_response(response: str):
+    """Parse an action JSON from the LLM response, allowing preamble text before JSON."""
+    if not response:
+        return None, {}, ""
+
+    reasoning_text = ""
+    cleaned = response.strip()
+    for prefix in ("```json", "```"):
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix):]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+
+    # Try direct parse
+    try:
+        data = json.loads(cleaned)
+        if isinstance(data, dict) and "tool" in data:
+            return data["tool"], data.get("params", {}), data.get("reasoning", "")
+    except Exception:
+        pass
+
+    # Extract first JSON object, capturing text before it as reasoning
+    try:
+        start = cleaned.find("{")
+        if start >= 0:
+            reasoning_text = cleaned[:start].strip()
+            depth, end = 0, start
+            for i, c in enumerate(cleaned[start:], start):
+                if c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            data = json.loads(cleaned[start:end])
+            if isinstance(data, dict) and "tool" in data:
+                return data["tool"], data.get("params", {}), data.get("reasoning", "") or reasoning_text
+    except Exception:
+        pass
+
+    return None, {}, ""
+
+
+def _flush_progress(as_client, namespace, inv_id, messages, tool_calls_list, iteration):
+    """Write current agent progress to Aerospike so the frontend can poll it."""
+    try:
+        key = (namespace, "investigations", inv_id)
+        as_client.put(key, {
+            "agent_msgs": json.dumps(messages, default=str),
+            "tool_detail": json.dumps(tool_calls_list, default=str),
+            "iterations": iteration,
+            "tool_calls": len(tool_calls_list),
+        })
+    except Exception as e:
+        logger.debug(f"Progress flush failed (non-fatal): {e}")
+
+
 def llm_agent_node(state: InvestigationState, as_client, namespace: str) -> dict:
-    # Fail fast if Gemini is not configured
     if not _get_gemini_api_key():
         raise RuntimeError("Gemini API key is not configured. Set it in Admin > Settings or export GEMINI_API_KEY.")
 
     tools = InvestigationTools(as_client, namespace)
     context = _build_context_summary(state)
     device_id = state["device_id"]
-    device_info = state.get("device_info", {})
+    inv_id = state["investigation_id"]
 
     messages = []
     tool_calls = []
     evidence = {}
     last_llm_error = None
 
-    for iteration in range(1, MAX_ITERATIONS + 1):
-        history = ""
+    def _format_history():
+        parts = []
         for m in messages:
-            if m["role"] == "assistant":
-                history += f"\nAssistant: {m['content'][:600]}"
+            if m["role"] == "assistant" and m.get("phase") == "analysis":
+                parts.append(f"\n[ANALYSIS] {m['content'][:800]}")
+            elif m["role"] == "assistant" and m.get("phase") == "action":
+                parts.append(f"\n[ACTION] {m['content'][:400]}")
+            elif m["role"] == "assistant":
+                parts.append(f"\n[AGENT] {m['content'][:600]}")
             elif m["role"] == "tool":
-                history += f"\nTool Result ({m['tool']}): {m['content'][:1500]}"
+                parts.append(f"\n[TOOL RESULT: {m['tool']}] {m['content'][:1500]}")
+        return "".join(parts) if parts else "(First iteration)"
 
-        hint = "Investigate thoroughly. Use tools to gather evidence before concluding."
-        if iteration >= MAX_ITERATIONS:
-            hint = "FINAL ITERATION. You must call submit_analysis now."
+    for iteration in range(1, MAX_ITERATIONS + 1):
+        history = _format_history()
 
-        prompt = f"""You are a SENIOR IOT SYSTEMS ENGINEER investigating an anomaly on a device.
+        # ---- PHASE 1: ANALYZE — reflect on what we know so far ----
+        has_tool_results = any(m["role"] == "tool" for m in messages)
+        need_more_evidence = len(tool_calls) < 3
 
-Your goal: Determine the ROOT CAUSE of the anomaly and suggest CORRECTIVE ACTIONS a human operator can take.
+        if has_tool_results or iteration == 1:
+            analyze_hint = "Begin by reviewing the alert context and planning your investigation approach." if iteration == 1 else (
+                "Analyze the tool results you received. What did you learn? What hypotheses can you form or rule out? What gaps remain?"
+            )
+
+            if len(tool_calls) >= MAX_TOOL_CALLS - 1:
+                analyze_hint += " You are almost out of tool calls. Summarize your findings."
+
+            analyze_prompt = f"""You are a SENIOR IOT SYSTEMS ENGINEER investigating an anomaly on a device.
+
+{context}
+
+## INVESTIGATION HISTORY
+{history}
+
+## STATUS
+- Iteration: {iteration}/{MAX_ITERATIONS}
+- Tool calls used: {len(tool_calls)}/{MAX_TOOL_CALLS}
+
+## YOUR TASK
+{analyze_hint}
+
+Write a concise analysis paragraph (3-6 sentences). Consider:
+- What evidence have you gathered so far?
+- What patterns or anomalies do you see in the data?
+- What hypotheses are supported or ruled out?
+- Is this an isolated sensor issue, environmental change, or systemic group problem?
+- Do you have ENOUGH evidence to reach a conclusion, or do you need more data?
+
+If you have gathered sufficient evidence (typically 3+ tool calls with meaningful data), state that you are ready to submit your conclusion.
+
+Respond with ONLY your analysis text. No JSON. No tool calls."""
+
+            try:
+                analysis_response = _call_gemini(analyze_prompt)
+                last_llm_error = None
+            except Exception as e:
+                logger.error(f"LLM analysis call failed: {e}")
+                last_llm_error = str(e)
+                if iteration >= 3:
+                    break
+                continue
+
+            messages.append({
+                "role": "assistant",
+                "phase": "analysis",
+                "content": analysis_response.strip(),
+                "ts": datetime.now(timezone.utc).isoformat(),
+            })
+            _flush_progress(as_client, namespace, inv_id, messages, tool_calls, iteration)
+
+        # ---- PHASE 2: ACT — decide next tool call or submit conclusion ----
+        remaining_calls = MAX_TOOL_CALLS - len(tool_calls)
+        force_conclude = iteration >= MAX_ITERATIONS or remaining_calls <= 0
+
+        action_hint = "Choose the next tool call to gather more evidence."
+        if force_conclude:
+            action_hint = "You MUST call submit_analysis now with your best findings."
+        elif not need_more_evidence and has_tool_results:
+            action_hint = "Choose the next tool call to gather more evidence, OR if you have sufficient evidence, call submit_analysis."
+
+        action_prompt = f"""You are a SENIOR IOT SYSTEMS ENGINEER investigating an anomaly.
 
 {context}
 
 {InvestigationTools.TOOL_DESCRIPTIONS}
 
-## INVESTIGATION STATUS
-- Iteration: {iteration}/{MAX_ITERATIONS}
-- Tool calls: {len(tool_calls)}/{MAX_TOOL_CALLS}
-- Note: {hint}
+## INVESTIGATION HISTORY
+{history}
 
-## CONVERSATION HISTORY
-{history if history else "(First iteration)"}
+## STATUS
+- Iteration: {iteration}/{MAX_ITERATIONS}
+- Tool calls used: {len(tool_calls)}/{MAX_TOOL_CALLS} (remaining: {remaining_calls})
+- {action_hint}
 
 ## INVESTIGATION STRATEGY
-1. Start by reviewing the alert and device context above
-2. Check device capabilities to understand what this sensor measures
-3. If the device has a redundancy group, compare its readings against redundant peers — if both show similar anomalies, the cause is likely environmental; if only this device is anomalous, it's likely a sensor fault
-4. If the device has coordinates, check environmental context from nearby devices to establish a local baseline
-5. Correlate metrics (e.g. temp+humidity, cpu+memory) to detect compound failures
-6. Check for correlated alerts across the group to identify systemic issues
-7. When you have enough evidence, call submit_analysis with your findings
-8. Focus on actionable root causes and practical corrective actions
+1. First understand the device: check capabilities, what metric it reports
+2. Get telemetry data to understand reading patterns and ranges
+3. If the device has redundant peers, compare readings — similar anomalies = environmental; divergence = sensor fault
+4. Check nearby devices for environmental baselines
+5. Correlate different metric types (temp+humidity, cpu+memory) across nearby devices
+6. Check for correlated alerts to identify systemic group issues
+7. Get device alerts history for pattern recognition
+8. Only submit when you have investigated at least 3-4 different data sources
+9. Provide specific, actionable root cause analysis
 
-Respond with ONLY a JSON object. No other text.
-
-YOUR JSON RESPONSE:"""
+Respond with ONLY a JSON object:
+{{"reasoning": "brief explanation of why you chose this action", "tool": "<tool_name>", "params": {{...}}}}"""
 
         try:
-            response = _call_gemini(prompt)
+            action_response = _call_gemini(action_prompt)
             last_llm_error = None
         except Exception as e:
-            logger.error(f"LLM call failed: {e}")
+            logger.error(f"LLM action call failed: {e}")
             last_llm_error = str(e)
             if iteration >= 3:
                 break
             continue
 
-        messages.append({"role": "assistant", "content": response, "ts": datetime.now(timezone.utc).isoformat()})
+        messages.append({
+            "role": "assistant",
+            "phase": "action",
+            "content": action_response.strip(),
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+        _flush_progress(as_client, namespace, inv_id, messages, tool_calls, iteration)
 
-        tool_name, params = _parse_tool_call(response)
+        tool_name, params, reasoning = _parse_action_response(action_response)
+        if not tool_name:
+            tool_name, params = _parse_tool_call(action_response)
+
         if not tool_name:
             continue
 
@@ -410,18 +544,23 @@ YOUR JSON RESPONSE:"""
         tool_calls.append({
             "tool": tool_name,
             "params": params,
+            "reasoning": reasoning,
             "result_keys": list(result.keys()) if isinstance(result, dict) else [],
             "result_summary": result_json[:3000],
             "ts": datetime.now(timezone.utc).isoformat(),
         })
         evidence[f"{tool_name}_{len(tool_calls)}"] = result
-        messages.append({"role": "tool", "tool": tool_name, "content": result_json[:2000], "ts": datetime.now(timezone.utc).isoformat()})
+        messages.append({
+            "role": "tool",
+            "tool": tool_name,
+            "content": result_json[:2000],
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+        _flush_progress(as_client, namespace, inv_id, messages, tool_calls, iteration)
 
-    # If we broke out due to LLM errors, propagate as failure
     if last_llm_error:
         raise RuntimeError(f"Gemini API error: {last_llm_error}")
 
-    # Fallback if agent exhausted iterations without submitting
     return {
         "analysis": {
             "root_cause": "Investigation inconclusive - agent did not reach a conclusion within iteration limits.",

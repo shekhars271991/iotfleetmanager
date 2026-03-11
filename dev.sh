@@ -8,6 +8,14 @@
 
 set -e
 
+# Load environment variables from .env file if it exists
+if [ -f .env ]; then
+  echo "==> Loading environment from .env"
+  set -a
+  source .env
+  set +a
+fi
+
 # Stop any Docker-based producer/consumer from previous runs
 docker compose stop producer consumer 2>/dev/null || true
 docker compose rm -f producer consumer 2>/dev/null || true

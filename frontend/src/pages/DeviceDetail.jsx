@@ -640,24 +640,17 @@ function InvDetail({ inv }) {
 
   if (inv.status === 'running') {
     return (
-      <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100/80 rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-9 h-9 rounded-lg bg-violet-100 flex items-center justify-center">
-            <span className="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+      <div className="space-y-4">
+        <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100/80 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center">
+            <span className="w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
           </div>
           <div>
             <p className="text-sm font-semibold text-violet-800">Agent Analyzing...</p>
-            <p className="text-[11px] text-violet-500">Correlating telemetry and reasoning about root cause</p>
+            <p className="text-[11px] text-violet-500">Live trace — watch the agent reason and collect evidence</p>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          {['Collecting Context', 'Querying Data', 'AI Reasoning'].map((label, i) => (
-            <div key={i} className="flex items-center gap-2 bg-white/60 rounded-lg px-3 py-2">
-              <span className="w-5 h-5 rounded-full bg-violet-200 text-violet-700 text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
-              <span className="text-[11px] text-violet-600 font-medium">{label}</span>
-            </div>
-          ))}
-        </div>
+        <InvestigationTrace invId={inv.id} status={inv.status} />
       </div>
     )
   }
