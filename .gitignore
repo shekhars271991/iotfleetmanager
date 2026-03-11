@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Build output
+frontend/dist/
+frontend/.vite/
+*.egg-info/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Aerospike data
+config/aerospike/data/
+config/aerospike/udf/
+
+# Kafka data
+config/kafka/data/
+
+# Monitoring data
+monitoring/grafana-data/
+monitoring/prometheus-data/
+
+# Logs
+*.log
+logs/
+
+# Docker volumes
+docker-data/
+
+# OS files
+Thumbs.db
