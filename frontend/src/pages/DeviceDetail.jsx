@@ -693,18 +693,28 @@ function InvDetail({ inv }) {
         <div className="space-y-4">
           {inv.summary && <p className="text-[13px] text-slate-600 leading-relaxed bg-slate-50 rounded-lg px-4 py-3">{inv.summary}</p>}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-red-50/50 border border-red-100/80 rounded-lg p-4">
-              <h4 className="text-[11px] font-semibold text-red-700 uppercase tracking-wider mb-2">Root Cause</h4>
-              <p className="text-[13px] text-slate-700 leading-relaxed">{inv.root_cause}</p>
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
+                  <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+                </span>
+                <h4 className="text-[12px] font-bold text-slate-800 uppercase tracking-wider">Root Cause</h4>
+              </div>
+              <p className="text-[13px] text-slate-600 leading-relaxed">{inv.root_cause}</p>
             </div>
-            <div className="bg-emerald-50/50 border border-emerald-100/80 rounded-lg p-4">
-              <h4 className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider mb-2">Corrective Actions</h4>
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
+                  <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                </span>
+                <h4 className="text-[12px] font-bold text-slate-800 uppercase tracking-wider">Corrective Actions</h4>
+              </div>
               {inv.corrective_actions?.length > 0 ? (
-                <ol className="space-y-1.5">
+                <ol className="space-y-2.5">
                   {inv.corrective_actions.map((action, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="w-4 h-4 rounded-full bg-emerald-200 text-emerald-700 text-[9px] font-bold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
-                      <span className="text-[13px] text-slate-700 leading-relaxed">{action}</span>
+                    <li key={i} className="flex items-start gap-2.5">
+                      <span className="w-5 h-5 rounded-md bg-indigo-50 text-indigo-600 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 ring-1 ring-indigo-100">{i + 1}</span>
+                      <span className="text-[13px] text-slate-600 leading-relaxed">{action}</span>
                     </li>
                   ))}
                 </ol>
