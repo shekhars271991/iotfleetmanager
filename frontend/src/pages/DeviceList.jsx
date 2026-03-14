@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../api/client'
+import { useShowcase } from '../context/ShowcaseContext'
 import StatusBadge from '../components/StatusBadge'
 import DeviceForm from '../components/DeviceForm'
 
@@ -42,6 +43,7 @@ const selectCls = 'px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm
 const searchCls = 'px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 outline-none transition-colors w-56'
 
 export default function DeviceList() {
+  const { labels } = useShowcase()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [devices, setDevices] = useState([])
@@ -140,7 +142,7 @@ export default function DeviceList() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-800 tracking-tight">Devices</h2>
+          <h2 className="text-2xl font-semibold text-slate-800 tracking-tight">{labels.devices}</h2>
           <p className="text-sm text-slate-500 mt-0.5">Manage and monitor all fleet devices</p>
         </div>
         <button
@@ -154,14 +156,14 @@ export default function DeviceList() {
           {showForm ? (
             <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>Close</>
           ) : (
-            <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>Add Device</>
+            <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>Add {labels.device}</>
           )}
         </button>
       </div>
 
       {showForm && (
         <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-6">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4">New Device</h3>
+          <h3 className="text-sm font-semibold text-slate-800 mb-4">New {labels.device}</h3>
           <DeviceForm groups={groups} onSubmit={handleAddDevice} onCancel={() => setShowForm(false)} />
         </div>
       )}
@@ -174,7 +176,7 @@ export default function DeviceList() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search name, ID, location..."
+            placeholder={`Search ${labels.device?.toLowerCase() || 'device'} name, ID, location...`}
             className={searchCls}
           />
 
@@ -222,7 +224,7 @@ export default function DeviceList() {
           )}
 
           <span className="ml-auto text-[11px] text-slate-400 font-medium shrink-0">
-            {filtered.length}{filtered.length !== devices.length ? ` of ${devices.length}` : ''} device{filtered.length !== 1 ? 's' : ''}
+            {filtered.length}{filtered.length !== devices.length ? ` of ${devices.length}` : ''} {filtered.length !== 1 ? labels.devices : labels.device}
           </span>
         </div>
 
@@ -250,7 +252,7 @@ export default function DeviceList() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100">
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Device ID</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{labels.device} ID</th>
                   <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Name</th>
                   <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Type</th>
                   <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Metric</th>
@@ -327,7 +329,7 @@ export default function DeviceList() {
                   <tr>
                     <td colSpan={9} className="px-5 py-12 text-center">
                       <svg className="w-8 h-8 text-slate-300 mx-auto mb-2" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M8.288 15.038a5.25 5.25 0 0 1 7.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 0 1 1.06 0Z" /></svg>
-                      <p className="text-sm text-slate-500 font-medium">No devices match your filters</p>
+                      <p className="text-sm text-slate-500 font-medium">No {labels.devices.toLowerCase()} match your filters</p>
                       <p className="text-[11px] text-slate-400 mt-0.5">Try adjusting your filter criteria</p>
                     </td>
                   </tr>

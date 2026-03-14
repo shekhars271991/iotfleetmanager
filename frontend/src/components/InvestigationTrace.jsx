@@ -353,6 +353,10 @@ function DbCallsPanel({ dbCalls, isRunning }) {
   const totalMs = dbCalls.reduce((s, c) => s + (c.ms || 0), 0)
   const avgMs = totalMs / dbCalls.length
   const failedCount = dbCalls.filter(c => !c.success).length
+  const queryCount = dbCalls.filter(c => c.op === 'query').length
+  const scanCount = dbCalls.filter(c => c.op === 'scan').length
+  const getCount = dbCalls.filter(c => c.op === 'get').length
+  const putCount = dbCalls.filter(c => c.op === 'put').length
 
   return (
     <div className="space-y-3">
@@ -375,6 +379,13 @@ function DbCallsPanel({ dbCalls, isRunning }) {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-1.5">
+        {queryCount > 0 && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">{queryCount} QUERY (indexed)</span>}
+        {scanCount > 0 && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">{scanCount} SCAN (full table)</span>}
+        {getCount > 0 && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 border border-cyan-200">{getCount} GET (key lookup)</span>}
+        {putCount > 0 && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200">{putCount} PUT (write)</span>}
+      </div>
+
       <div className="border border-slate-200 rounded-lg overflow-hidden">
         <table className="w-full text-[12px]">
           <thead>
@@ -393,14 +404,24 @@ function DbCallsPanel({ dbCalls, isRunning }) {
               <tr key={i} className={`border-b border-slate-100 last:border-b-0 ${!call.success ? 'bg-red-50/40' : i % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
                 <td className="px-3 py-1.5 text-slate-400 font-mono">{i + 1}</td>
                 <td className="px-3 py-1.5">
-                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${call.op === 'get' ? 'bg-cyan-100 text-cyan-700' : 'bg-amber-100 text-amber-700'}`}>
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                    call.op === 'get' ? 'bg-cyan-100 text-cyan-700' :
+                    call.op === 'query' ? 'bg-emerald-100 text-emerald-700' :
+                    call.op === 'put' ? 'bg-violet-100 text-violet-700' :
+                    'bg-amber-100 text-amber-700'
+                  }`}>
                     {call.op}
                   </span>
                 </td>
                 <td className="px-3 py-1.5 font-mono text-slate-700">{call.set}</td>
                 <td className="px-3 py-1.5 text-slate-500 font-mono text-[11px]">{call.caller || '—'}</td>
                 <td className="px-3 py-1.5 text-right text-slate-500">
-                  {call.op === 'get' ? <span className="font-mono text-[11px]">{call.key}</span> : <span className="text-[11px]">{call.rows} rows</span>}
+                  {call.op === 'get' || call.op === 'put'
+                    ? <span className="font-mono text-[11px]">{String(call.key || '').substring(0, 24)}</span>
+                    : <span className="text-[11px]">
+                        {call.key && <span className="font-mono text-slate-400 mr-1">{String(call.key).substring(0, 20)}</span>}
+                        <span className="font-semibold">{call.rows ?? '?'} rows</span>
+                      </span>}
                 </td>
                 <td className="px-3 py-1.5 text-right font-mono">
                   <span className={`${call.ms > 100 ? 'text-red-600 font-bold' : call.ms > 30 ? 'text-amber-600' : 'text-emerald-600'}`}>

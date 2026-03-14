@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../api/client'
+import { useShowcase } from '../context/ShowcaseContext'
 import StatusBadge from '../components/StatusBadge'
 import DeviceForm from '../components/DeviceForm'
 import RulesPanel from '../components/RulesPanel'
@@ -45,26 +46,27 @@ function formatValue(metric, value) {
   return `${value}${meta?.unit ? ' ' + meta.unit : ''}`
 }
 
-const TABS = [
-  { id: 'info', label: 'Device Information', icon: (
+const TABS = (labels) => [
+  { id: 'info', label: `${labels.device} Information`, icon: (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" /></svg>
   )},
-  { id: 'telemetry', label: 'Telemetry', icon: (
+  { id: 'telemetry', label: labels.telemetry, icon: (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
   )},
-  { id: 'rules', label: 'Alert Rules', icon: (
+  { id: 'rules', label: `${labels.alert} ${labels.rules}`, icon: (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
   )},
-  { id: 'alerts_ai', label: 'Alerts', icon: (
+  { id: 'alerts_ai', label: labels.alerts, icon: (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" /></svg>
   )},
-  { id: 'investigations', label: 'Investigations', icon: (
+  { id: 'investigations', label: labels.investigations, icon: (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" /></svg>
   )},
 ]
 
 export default function DeviceDetail() {
   const { id } = useParams()
+  const { labels } = useShowcase()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const autoInvestigateAlertId = searchParams.get('investigate')
@@ -214,7 +216,7 @@ export default function DeviceDetail() {
   }
 
   if (!device) {
-    return <div className="p-8"><p className="text-red-500">Device not found</p></div>
+    return <div className="p-8"><p className="text-red-500">{labels.device} not found</p></div>
   }
 
   const groupName = groups.find(g => g.id === device.group_id)?.name || 'None'
@@ -291,7 +293,7 @@ export default function DeviceDetail() {
         <div className="bg-slate-100 border border-slate-200 rounded-xl px-5 py-4 flex items-center gap-3">
           <svg className="w-5 h-5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
           <div>
-            <p className="text-sm font-medium text-slate-700">This device has been decommissioned</p>
+            <p className="text-sm font-medium text-slate-700">This {labels.device.toLowerCase()} has been decommissioned</p>
             <p className="text-[11px] text-slate-400 mt-0.5">It is no longer part of active fleet operations. You can recommission it to bring it back online.</p>
           </div>
         </div>
@@ -300,7 +302,7 @@ export default function DeviceDetail() {
       {/* Tab Navigation */}
       <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm">
         <nav className="flex border-b border-slate-100 px-2">
-          {TABS.map(tab => {
+          {TABS(labels).map(tab => {
             const activeAlerts = tab.id === 'alerts_ai' ? groupedAlerts.filter(g => g.open_count > 0).length : 0
             const hasRunning = tab.id === 'investigations' && !!runningInvId
             return (
@@ -341,7 +343,7 @@ export default function DeviceDetail() {
             <div className="space-y-5">
               {editing && (
                 <div>
-                  <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Edit Device</h4>
+                  <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Edit {labels.device}</h4>
                   <DeviceForm device={device} groups={groups} onSubmit={handleUpdate} onCancel={() => setEditing(false)} />
                 </div>
               )}
@@ -349,7 +351,7 @@ export default function DeviceDetail() {
               {!editing && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-100 rounded-lg overflow-hidden border border-slate-100">
-                    <InfoCell label="Device ID" value={device.id ? device.id.substring(0, 8) : 'N/A'} mono />
+                    <InfoCell label={`${labels.device} ID`} value={device.id ? device.id.substring(0, 8) : 'N/A'} mono />
                     <InfoCell label="IP Address" value={device.ip_address || 'N/A'} mono />
                     <InfoCell label="Firmware" value={device.firmware_ver || 'N/A'} />
                     <InfoCell label="Group" value={groupName} />
@@ -546,7 +548,7 @@ export default function DeviceDetail() {
               }) : (
                 <div className="text-center py-10">
                   <svg className="w-8 h-8 text-emerald-300 mx-auto mb-2" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-                  <p className="text-sm text-slate-400">No alerts for this device</p>
+                  <p className="text-sm text-slate-400">No {labels.alerts.toLowerCase()} for this {labels.device.toLowerCase()}</p>
                   <p className="text-[11px] text-slate-300 mt-0.5">Alerts appear when rules are triggered by telemetry</p>
                 </div>
               )}
@@ -555,7 +557,7 @@ export default function DeviceDetail() {
 
           {/* ===== INVESTIGATIONS ===== */}
           {activeTab === 'investigations' && (
-            <DeviceInvestigationsTab investigations={deviceInvestigations} selectedInvId={selectedInvId} setSelectedInvId={setSelectedInvId} runningInvId={runningInvId} />
+            <DeviceInvestigationsTab investigations={deviceInvestigations} selectedInvId={selectedInvId} setSelectedInvId={setSelectedInvId} runningInvId={runningInvId} labels={labels} />
           )}
         </div>
       </div>
@@ -583,15 +585,15 @@ const CONFIDENCE = {
   low: 'bg-red-50 text-red-700 border-red-200',
 }
 
-function DeviceInvestigationsTab({ investigations, selectedInvId, setSelectedInvId }) {
+function DeviceInvestigationsTab({ investigations, selectedInvId, setSelectedInvId, labels }) {
   const inv = selectedInvId ? investigations.find(i => i.id === selectedInvId) : null
 
   if (investigations.length === 0) {
     return (
       <div className="py-12 text-center">
         <svg className="w-10 h-10 text-slate-200 mx-auto mb-2" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" /></svg>
-        <p className="text-sm font-medium text-slate-500">No investigations yet</p>
-        <p className="text-[12px] text-slate-400 mt-0.5">Click "Investigate" on any alert to start an AI analysis</p>
+        <p className="text-sm font-medium text-slate-500">No {labels?.investigations?.toLowerCase() || 'investigations'} yet</p>
+        <p className="text-[12px] text-slate-400 mt-0.5">Click "Investigate" on any {labels?.alert?.toLowerCase() || 'alert'} to start an AI analysis</p>
       </div>
     )
   }

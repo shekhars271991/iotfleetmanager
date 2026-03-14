@@ -9,6 +9,7 @@ LangGraph workflow for IoT anomaly investigation.
 Uses Aerospike checkpointer for workflow state persistence.
 """
 
+import math
 import os
 import re
 import json
@@ -16,13 +17,17 @@ import time
 import pickle
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import aerospike
 import httpx
+from aerospike import predicates as p
+from aerospike_helpers import expressions as exp
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.aerospike import AerospikeSaver
 
+from app.database import get_active_mode
+from app.domain_config import get_mode_config
 from app.agent.state import InvestigationState
 from app.agent.tools import InvestigationTools
 
@@ -189,6 +194,7 @@ def _safe_json(raw):
 
 
 def _build_context_summary(state: InvestigationState) -> str:
+    mode_cfg = get_mode_config(get_active_mode())
     dev = state.get("device_info", {})
     alert = state.get("alert_info", {})
     group = state.get("group_info", {})
@@ -202,7 +208,7 @@ def _build_context_summary(state: InvestigationState) -> str:
     rg = dev.get("redundancy_group", "") or dev.get("redun_group", "")
 
     lines = [
-        "# IOT ANOMALY INVESTIGATION CONTEXT",
+        f"# {mode_cfg['agent_context_title']}",
         "",
         "## Alert",
         f"- Message: {alert.get('message', 'N/A')}",
@@ -311,7 +317,7 @@ def _tracked_get(as_client, key, db_calls, caller=""):
 
 
 def _tracked_scan(as_client, namespace, as_set, db_calls, caller=""):
-    """Aerospike query/scan with timing tracking for context collection."""
+    """Full-table scan with timing tracking (fallback — prefer _tracked_query)."""
     t0 = time.perf_counter()
     try:
         query = as_client.query(namespace, as_set)
@@ -329,6 +335,32 @@ def _tracked_scan(as_client, namespace, as_set, db_calls, caller=""):
         db_calls.append({
             "op": "scan", "set": as_set, "rows": 0,
             "caller": caller, "ms": elapsed, "success": False, "error": str(e),
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+        raise
+
+
+def _tracked_query(as_client, namespace, as_set, bin_name, value, db_calls, caller="", expr_filter=None):
+    """Secondary-index query with optional expression filter for context collection."""
+    t0 = time.perf_counter()
+    try:
+        query = as_client.query(namespace, as_set)
+        query.where(p.equals(bin_name, value))
+        policy = {"expressions": expr_filter} if expr_filter else None
+        records = []
+        query.foreach(lambda r: records.append(r[2]), policy=policy)
+        elapsed = round((time.perf_counter() - t0) * 1000, 2)
+        db_calls.append({
+            "op": "query", "set": as_set, "key": f"{bin_name}={value}",
+            "rows": len(records), "caller": caller, "ms": elapsed, "success": True,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+        return records
+    except Exception as e:
+        elapsed = round((time.perf_counter() - t0) * 1000, 2)
+        db_calls.append({
+            "op": "query", "set": as_set, "key": f"{bin_name}={value}",
+            "rows": 0, "caller": caller, "ms": elapsed, "success": False, "error": str(e),
             "ts": datetime.now(timezone.utc).isoformat(),
         })
         raise
@@ -366,53 +398,42 @@ def collect_context_node(state: InvestigationState, as_client, namespace: str) -
         except Exception:
             pass
 
-    # Load group devices
+    # Load group devices via SI query on group_id
     group_devices = []
     if group_id:
-        all_devs = _tracked_scan(as_client, namespace, "devices", db_calls, "collect_context:group_devices")
+        gd_records = _tracked_query(as_client, namespace, "devices", "group_id", group_id, db_calls, "collect_context:group_devices")
         group_devices = [
             {"id": d.get("id"), "name": d.get("name"), "status": d.get("status"), "type": d.get("type"),
              "latitude": d.get("latitude"), "longitude": d.get("longitude"),
              "redun_group": d.get("redun_group", ""), "redundancy_group": d.get("redundancy_group", "")}
-            for d in all_devs if d.get("group_id") == group_id
+            for d in gd_records
         ]
 
-    # Load recent telemetry
-    all_telem = _tracked_scan(as_client, namespace, "telemetry", db_calls, "collect_context:telemetry")
-    telemetry = sorted(
-        [t for t in all_telem if t.get("device_id") == device_id],
-        key=lambda t: t.get("timestamp", ""),
-        reverse=True,
-    )[:30]
+    # Load recent telemetry via SI query on device_id + timestamp expression
+    telem_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
+    telem_ts_expr = exp.GE(exp.StrBin("timestamp"), exp.Val(telem_cutoff)).compile()
+    telem_records = _tracked_query(as_client, namespace, "telemetry", "device_id", device_id, db_calls, "collect_context:telemetry", expr_filter=telem_ts_expr)
+    telemetry = sorted(telem_records, key=lambda t: t.get("timestamp", ""), reverse=True)[:30]
 
-    # Load active rules for this device/group
-    rules = _tracked_scan(as_client, namespace, "rules", db_calls, "collect_context:rules")
-    active_rules = [
-        r for r in rules
-        if r.get("enabled") and (
-            (r.get("scope") == "device" and r.get("scope_id") == device_id) or
-            (r.get("scope") == "group" and r.get("scope_id") == group_id)
-        )
-    ]
+    # Load active rules via SI queries on scope_id
+    enabled_expr = exp.Eq(exp.IntBin("enabled"), exp.Val(1)).compile()
+    active_rules = []
+    if device_id:
+        active_rules.extend(_tracked_query(as_client, namespace, "rules", "scope_id", device_id, db_calls, "collect_context:rules_device", expr_filter=enabled_expr))
+    if group_id:
+        active_rules.extend(_tracked_query(as_client, namespace, "rules", "scope_id", group_id, db_calls, "collect_context:rules_group", expr_filter=enabled_expr))
 
-    # Load redundancy peers
+    # Load redundancy peers via SI query on redun_group
     redundancy_peers = []
     rg = device_info.get("redun_group", "") or device_info.get("redundancy_group", "")
     if rg:
-        for gd in group_devices:
-            gd_rg = gd.get("redun_group", "") or gd.get("redundancy_group", "")
-            if gd_rg == rg and gd.get("id") != device_id:
-                redundancy_peers.append(gd)
-        if not redundancy_peers:
-            all_devs = _tracked_scan(as_client, namespace, "devices", db_calls, "collect_context:redundancy_scan")
-            for d in all_devs:
-                d_rg = d.get("redun_group", "") or d.get("redundancy_group", "")
-                if d_rg == rg and d.get("id") != device_id and d.get("status") != "decommissioned":
-                    redundancy_peers.append({"id": d.get("id"), "name": d.get("name"), "status": d.get("status"), "type": d.get("type")})
+        rg_records = _tracked_query(as_client, namespace, "devices", "redun_group", rg, db_calls, "collect_context:redundancy")
+        for d in rg_records:
+            if d.get("id") != device_id and d.get("status") != "decommissioned":
+                redundancy_peers.append({"id": d.get("id"), "name": d.get("name"), "status": d.get("status"), "type": d.get("type")})
 
-    # Load nearby devices (within 10km)
+    # Load nearby devices (within 10km) — uses group_devices already fetched via SI
     nearby_devices = []
-    import math
     lat = device_info.get("latitude", 0.0) or 0.0
     lon = device_info.get("longitude", 0.0) or 0.0
     if lat and lon:
@@ -496,6 +517,7 @@ def llm_agent_node(state: InvestigationState, as_client, namespace: str) -> dict
     if not _get_gemini_api_key():
         raise RuntimeError("Gemini API key is not configured. Set it in Admin > Settings or export GEMINI_API_KEY.")
 
+    mode_cfg = get_mode_config(get_active_mode())
     tools = InvestigationTools(as_client, namespace)
     tools.db_calls = list(state.get("db_calls") or [])
     context = _build_context_summary(state)
@@ -535,7 +557,7 @@ def llm_agent_node(state: InvestigationState, as_client, namespace: str) -> dict
             if len(tool_calls) >= MAX_TOOL_CALLS - 1:
                 analyze_hint += " You are almost out of tool calls. Summarize your findings."
 
-            analyze_prompt = f"""You are a SENIOR IOT SYSTEMS ENGINEER investigating an anomaly on a device.
+            analyze_prompt = f"""You are a {mode_cfg['agent_role']} investigating a {mode_cfg['agent_investigation_noun']} on a device.
 
 {context}
 
@@ -591,11 +613,11 @@ Respond with ONLY your analysis text. No JSON. No tool calls."""
         elif not need_more_evidence and has_tool_results:
             action_hint = "Choose the next tool call to gather more evidence, OR if you have sufficient evidence, call submit_analysis."
 
-        action_prompt = f"""You are a SENIOR IOT SYSTEMS ENGINEER investigating an anomaly.
+        action_prompt = f"""You are a {mode_cfg['agent_role']} investigating a {mode_cfg['agent_investigation_noun']}.
 
 {context}
 
-{InvestigationTools.TOOL_DESCRIPTIONS}
+{InvestigationTools.get_tool_descriptions()}
 
 ## INVESTIGATION HISTORY
 {history}

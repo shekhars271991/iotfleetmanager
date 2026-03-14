@@ -8,7 +8,7 @@ import aerospike
 from aerospike import predicates as p
 from fastapi import APIRouter, HTTPException
 
-from app.database import get_client, NAMESPACE
+from app.database import get_client, get_namespace
 from app.schemas import DeviceCreate, DeviceUpdate, DeviceOut, IssueDevice, AlertOut, TelemetryOut
 
 router = APIRouter(tags=["devices"])
@@ -67,7 +67,7 @@ async def list_devices(
     group_id: Optional[str] = None,
 ):
     client = get_client()
-    query = client.query(NAMESPACE, SET_NAME)
+    query = client.query(get_namespace(), SET_NAME)
 
     if status:
         query.where(p.equals("status", status))
@@ -91,7 +91,7 @@ async def list_devices(
 async def list_issue_devices():
     client = get_client()
 
-    offline_query = client.query(NAMESPACE, SET_NAME)
+    offline_query = client.query(get_namespace(), SET_NAME)
     offline_query.where(p.equals("status", "offline"))
     offline_devices = []
     def cb_offline(record):
@@ -100,7 +100,7 @@ async def list_issue_devices():
         offline_devices.append(DeviceOut(id=decoded.get("id", ""), **{k: v for k, v in decoded.items() if k != "id"}))
     offline_query.foreach(cb_offline)
 
-    warning_query = client.query(NAMESPACE, SET_NAME)
+    warning_query = client.query(get_namespace(), SET_NAME)
     warning_query.where(p.equals("status", "warning"))
     warning_devices = []
     def cb_warning(record):
@@ -113,7 +113,7 @@ async def list_issue_devices():
 
     issue_list = []
     for device in all_issue_devices:
-        alert_query = client.query(NAMESPACE, "alerts")
+        alert_query = client.query(get_namespace(), "alerts")
         alert_query.where(p.equals("device_id", device.id))
         device_alerts = []
         def cb_alert(record, _alerts=device_alerts):
@@ -146,7 +146,7 @@ async def list_issue_devices():
 @router.get("/devices/{device_id}/telemetry", response_model=list[TelemetryOut])
 async def get_device_telemetry(device_id: str, limit: int = 50):
     client = get_client()
-    query = client.query(NAMESPACE, "telemetry")
+    query = client.query(get_namespace(), "telemetry")
     query.where(p.equals("device_id", device_id))
 
     results = []
@@ -167,7 +167,7 @@ async def get_device_telemetry(device_id: str, limit: int = 50):
 @router.get("/devices/{device_id}", response_model=DeviceOut)
 async def get_device(device_id: str):
     client = get_client()
-    key = (NAMESPACE, SET_NAME, device_id)
+    key = (get_namespace(), SET_NAME, device_id)
     try:
         _, _, bins = client.get(key)
         decoded = _decode_bins(bins)
@@ -181,7 +181,7 @@ async def create_device(device: DeviceCreate):
     client = get_client()
     device_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    key = (NAMESPACE, SET_NAME, device_id)
+    key = (get_namespace(), SET_NAME, device_id)
     api_bins = {
         "id": device_id,
         "name": device.name,
@@ -207,7 +207,7 @@ async def create_device(device: DeviceCreate):
 @router.put("/devices/{device_id}", response_model=DeviceOut)
 async def update_device(device_id: str, device: DeviceUpdate):
     client = get_client()
-    key = (NAMESPACE, SET_NAME, device_id)
+    key = (get_namespace(), SET_NAME, device_id)
     try:
         _, _, existing = client.get(key)
     except Exception:
@@ -233,7 +233,7 @@ async def update_device(device_id: str, device: DeviceUpdate):
 @router.put("/devices/{device_id}/decommission", response_model=DeviceOut)
 async def decommission_device(device_id: str):
     client = get_client()
-    key = (NAMESPACE, SET_NAME, device_id)
+    key = (get_namespace(), SET_NAME, device_id)
     try:
         _, _, existing = client.get(key)
     except Exception:
@@ -249,7 +249,7 @@ async def decommission_device(device_id: str):
 @router.put("/devices/{device_id}/recommission", response_model=DeviceOut)
 async def recommission_device(device_id: str):
     client = get_client()
-    key = (NAMESPACE, SET_NAME, device_id)
+    key = (get_namespace(), SET_NAME, device_id)
     try:
         _, _, existing = client.get(key)
     except Exception:
@@ -265,7 +265,7 @@ async def recommission_device(device_id: str):
 @router.delete("/devices/{device_id}", status_code=204)
 async def delete_device(device_id: str):
     client = get_client()
-    key = (NAMESPACE, SET_NAME, device_id)
+    key = (get_namespace(), SET_NAME, device_id)
     try:
         client.remove(key)
     except Exception:
@@ -284,7 +284,7 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 async def get_nearby_devices(device_id: str, radius_km: float = 5.0, limit: int = 20):
     client = get_client()
     try:
-        _, _, bins = client.get((NAMESPACE, SET_NAME, device_id))
+        _, _, bins = client.get((get_namespace(), SET_NAME, device_id))
     except Exception:
         raise HTTPException(status_code=404, detail="Device not found")
 
@@ -293,7 +293,7 @@ async def get_nearby_devices(device_id: str, radius_km: float = 5.0, limit: int 
     if lat == 0.0 and lon == 0.0:
         return []
 
-    query = client.query(NAMESPACE, SET_NAME)
+    query = client.query(get_namespace(), SET_NAME)
     all_devices = []
     query.foreach(lambda r: all_devices.append(r[2]))
 
@@ -319,7 +319,7 @@ async def get_nearby_devices(device_id: str, radius_km: float = 5.0, limit: int 
 async def get_redundancy_peers(device_id: str):
     client = get_client()
     try:
-        _, _, bins = client.get((NAMESPACE, SET_NAME, device_id))
+        _, _, bins = client.get((get_namespace(), SET_NAME, device_id))
     except Exception:
         raise HTTPException(status_code=404, detail="Device not found")
 
@@ -327,7 +327,7 @@ async def get_redundancy_peers(device_id: str):
     if not rg:
         return []
 
-    query = client.query(NAMESPACE, SET_NAME)
+    query = client.query(get_namespace(), SET_NAME)
     peers = []
     def cb(record):
         _, _, d = record

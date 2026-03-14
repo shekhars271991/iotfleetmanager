@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import api from '../api/client'
+import { useShowcase } from '../context/ShowcaseContext'
 
 function timeAgo(dateStr) {
   if (!dateStr) return 'N/A'
@@ -30,6 +31,21 @@ const TEMPLATE_ICONS = {
   intermittent: (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M8.288 15.038a5.25 5.25 0 0 1 7.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 0 1 1.06 0Z" /></svg>
   ),
+  brute_force: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z" /></svg>
+  ),
+  port_scan: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 3.75H6A2.25 2.25 0 0 0 3.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0 1 20.25 6v1.5m0 9V18A2.25 2.25 0 0 1 18 20.25h-1.5m-9 0H6A2.25 2.25 0 0 1 3.75 18v-1.5M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+  ),
+  malware: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75c1.148 0 2.278.08 3.383.237 1.037.146 1.866.966 1.866 2.013 0 3.728-2.35 6.75-5.25 6.75S6.75 18.728 6.75 15c0-1.046.83-1.867 1.866-2.013A24.204 24.204 0 0 1 12 12.75Zm0 0c2.883 0 5.647.508 8.207 1.44a23.91 23.91 0 0 1-1.152 6.06M12 12.75c-2.883 0-5.647.508-8.208 1.44.125 2.104.52 4.136 1.153 6.06M12 12.75a2.25 2.25 0 0 0 2.248-2.354M12 12.75a2.25 2.25 0 0 1-2.248-2.354M12 8.25c.995 0 1.971-.08 2.922-.236.403-.066.74-.358.795-.762a3.778 3.778 0 0 0-.399-2.25M12 8.25c-.995 0-1.97-.08-2.922-.236-.402-.066-.74-.358-.795-.762a3.734 3.734 0 0 1 .4-2.253M12 8.25a2.25 2.25 0 0 0-2.248 2.146M12 8.25a2.25 2.25 0 0 1 2.248 2.146M8.683 5a6.032 6.032 0 0 1-1.155-1.002c.07-.63.27-1.222.574-1.747m.581 2.749A3.75 3.75 0 0 1 15.318 5m0 0c.427-.283.815-.62 1.155-.999a4.471 4.471 0 0 0-.575-1.752M4.921 6a24.048 24.048 0 0 0-.392 3.314c1.668.546 3.416.914 5.223 1.082M19.08 6c.205 1.08.337 2.187.392 3.314a23.882 23.882 0 0 1-5.223 1.082" /></svg>
+  ),
+  exfiltration: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>
+  ),
+  ddos: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9.75 14.25 12m0 0 2.25 2.25M14.25 12l2.25-2.25M14.25 12 12 14.25m-2.58 4.92-6.374-6.375a1.125 1.125 0 0 1 0-1.59L9.42 4.83c.21-.211.497-.33.795-.33H18a2.25 2.25 0 0 1 2.25 2.25v7.5a2.25 2.25 0 0 1-2.25 2.25h-7.785a1.125 1.125 0 0 1-.795-.33Z" /></svg>
+  ),
 }
 
 const TEMPLATE_COLORS = {
@@ -38,6 +54,11 @@ const TEMPLATE_COLORS = {
   stress: { bg: 'bg-red-50', text: 'text-red-600', ring: 'ring-red-500', badge: 'bg-red-100 text-red-700' },
   degradation: { bg: 'bg-orange-50', text: 'text-orange-600', ring: 'ring-orange-500', badge: 'bg-orange-100 text-orange-700' },
   intermittent: { bg: 'bg-purple-50', text: 'text-purple-600', ring: 'ring-purple-500', badge: 'bg-purple-100 text-purple-700' },
+  brute_force: { bg: 'bg-amber-50', text: 'text-amber-600', ring: 'ring-amber-500', badge: 'bg-amber-100 text-amber-700' },
+  port_scan: { bg: 'bg-red-50', text: 'text-red-600', ring: 'ring-red-500', badge: 'bg-red-100 text-red-700' },
+  malware: { bg: 'bg-red-50', text: 'text-red-600', ring: 'ring-red-500', badge: 'bg-red-100 text-red-700' },
+  exfiltration: { bg: 'bg-orange-50', text: 'text-orange-600', ring: 'ring-orange-500', badge: 'bg-orange-100 text-orange-700' },
+  ddos: { bg: 'bg-purple-50', text: 'text-purple-600', ring: 'ring-purple-500', badge: 'bg-purple-100 text-purple-700' },
 }
 
 const STATUS_STYLES = {
@@ -69,7 +90,27 @@ const COMP_STATUS = {
   unknown: { dot: 'bg-slate-400', text: 'text-slate-500', bg: 'bg-slate-100', label: 'Unknown' },
 }
 
+const MODE_OPTIONS = [
+  {
+    id: 'iot',
+    name: 'IoT Fleet Management',
+    desc: 'Manage IoT devices, sensors, and gateways. Monitor telemetry, detect anomalies.',
+    icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.348 14.652a3.75 3.75 0 0 1 0-5.304m5.304 0a3.75 3.75 0 0 1 0 5.304m-7.425 2.121a6.75 6.75 0 0 1 0-9.546m9.546 0a6.75 6.75 0 0 1 0 9.546M5.106 18.894c-3.808-3.807-3.808-9.98 0-13.788m13.788 0c3.808 3.807 3.808 9.98 0 13.788M12 12h.008v.008H12V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" /></svg>,
+    accent: 'indigo',
+    namespace: 'iotfleet',
+  },
+  {
+    id: 'security',
+    name: 'Security Operations Center',
+    desc: 'Monitor network endpoints, detect threats, investigate security incidents.',
+    icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" /></svg>,
+    accent: 'red',
+    namespace: 'secfleet',
+  },
+]
+
 export default function Admin() {
+  const { mode: activeMode, switchMode, refresh: refreshShowcase } = useShowcase()
   const [templates, setTemplates] = useState([])
   const [simulations, setSimulations] = useState([])
   const [groups, setGroups] = useState([])
@@ -100,6 +141,13 @@ export default function Admin() {
   const [clearSets, setClearSets] = useState({})
   const [clearing, setClearing] = useState(false)
   const [clearResult, setClearResult] = useState(null)
+
+  // Mode switching state
+  const [modeSwitching, setModeSwitching] = useState(false)
+
+  // Scenario loading state
+  const [scenarioLoading, setScenarioLoading] = useState(null)
+  const [scenarioResult, setScenarioResult] = useState(null)
 
   const fetchStatus = () => {
     api.get('/api/admin/status').then(res => setSysStatus(res.data)).catch(() => {})
@@ -295,6 +343,35 @@ export default function Admin() {
     }
   }
 
+  const handleModeSwitch = async (newMode) => {
+    if (newMode === activeMode || modeSwitching) return
+    if (!confirm(`Switch to ${MODE_OPTIONS.find(m => m.id === newMode)?.name}? Data is stored separately per mode.`)) return
+    setModeSwitching(true)
+    try {
+      await switchMode(newMode)
+      fetchAll()
+    } finally {
+      setModeSwitching(false)
+    }
+  }
+
+  const handleRunScenario = async (scenarioId) => {
+    const scenarioNames = { iot: 'IoT Fleet — HVAC Failure', security: 'Security Ops — Network Threats' }
+    if (!confirm(`Load "${scenarioNames[scenarioId]}" scenario? This will switch mode, clear all existing data, and create groups, devices, rules, and simulations.`)) return
+    setScenarioLoading(scenarioId)
+    setScenarioResult(null)
+    try {
+      const res = await api.post(`/api/admin/setup-scenario/${scenarioId}`)
+      setScenarioResult(res.data)
+      refreshShowcase()
+      fetchAll()
+    } catch (err) {
+      setScenarioResult({ error: err.response?.data?.detail || 'Scenario setup failed' })
+    } finally {
+      setScenarioLoading(null)
+    }
+  }
+
   const selectedTpl = templates.find(t => t.id === formTemplate)
   const [adminTab, setAdminTab] = useState('status')
 
@@ -321,6 +398,7 @@ export default function Admin() {
 
   const ADMIN_TABS = [
     { id: 'status', label: 'System Status', icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" /></svg> },
+    { id: 'scenarios', label: 'Demo Scenarios', icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" /></svg> },
     { id: 'simulations', label: 'Simulations', icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" /></svg> },
     { id: 'settings', label: 'Settings', icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg> },
     { id: 'data', label: 'Data Management', icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg> },
@@ -396,6 +474,121 @@ export default function Admin() {
           {adminTab === 'status' && !sysStatus && (
             <div className="py-12 text-center">
               <p className="text-sm text-slate-400">Unable to fetch system status</p>
+            </div>
+          )}
+
+          {/* ===== DEMO SCENARIOS TAB ===== */}
+          {adminTab === 'scenarios' && (
+            <div className="space-y-4">
+              <p className="text-[11px] text-slate-400">Load a pre-built demo scenario. This switches showcase mode, clears existing data, creates groups, devices, rules, and starts simulations.</p>
+              <div className="grid grid-cols-2 gap-4">
+                {/* IoT Scenario */}
+                <div className="rounded-xl border-2 border-slate-200 bg-white p-5 flex flex-col">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.348 14.652a3.75 3.75 0 0 1 0-5.304m5.304 0a3.75 3.75 0 0 1 0 5.304m-7.425 2.121a6.75 6.75 0 0 1 0-9.546m9.546 0a6.75 6.75 0 0 1 0 9.546M5.106 18.894c-3.808-3.807-3.808-9.98 0-13.788m13.788 0c3.808 3.807 3.808 9.98 0 13.788M12 12h.008v.008H12V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" /></svg>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[14px] font-semibold text-slate-800">IoT Fleet — HVAC Failure</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Cold storage zone with redundant temperature & humidity sensors, plus server room, loading dock, and field sensors. Stress simulation triggers HVAC failure alerts for AI investigation.</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400 mb-4 pl-[52px]">
+                    <span>4 groups</span>
+                    <span>16 devices</span>
+                    <span>4 simulations</span>
+                    <span className="font-mono text-slate-300">iotfleet</span>
+                  </div>
+                  <div className="mt-auto pl-[52px]">
+                    <button
+                      onClick={() => handleRunScenario('iot')}
+                      disabled={!!scenarioLoading}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {scenarioLoading === 'iot' ? (
+                        <>
+                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                          Setting up...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" /></svg>
+                          Load IoT Scenario
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Security Scenario */}
+                <div className="rounded-xl border-2 border-slate-200 bg-white p-5 flex flex-col">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-lg bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" /></svg>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[14px] font-semibold text-slate-800">Security Ops — Network Threats</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Corporate network with security zones: Corporate LAN, DMZ, Server Farm, and Remote VPN. Simulates brute force attacks and data exfiltration for threat investigation.</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400 mb-4 pl-[52px]">
+                    <span>4 zones</span>
+                    <span>17 endpoints</span>
+                    <span>3 simulations</span>
+                    <span className="font-mono text-slate-300">secfleet</span>
+                  </div>
+                  <div className="mt-auto pl-[52px]">
+                    <button
+                      onClick={() => handleRunScenario('security')}
+                      disabled={!!scenarioLoading}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-[13px] font-medium rounded-lg hover:bg-red-700 shadow-sm shadow-red-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {scenarioLoading === 'security' ? (
+                        <>
+                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                          Setting up...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" /></svg>
+                          Load Security Scenario
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Scenario Result */}
+              {scenarioResult && !scenarioResult.error && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+                    <p className="text-[14px] font-semibold text-emerald-800">{scenarioResult.label}</p>
+                  </div>
+                  <div className="space-y-1.5 mb-4">
+                    {scenarioResult.steps?.map((s, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[12px]">
+                        <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-bold shrink-0">{i + 1}</span>
+                        <span className="font-medium text-slate-700">{s.step}</span>
+                        <span className="text-slate-400">— {s.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-4 text-[12px] font-medium text-emerald-700">
+                    {scenarioResult.summary && Object.entries(scenarioResult.summary).map(([k, v]) => (
+                      <span key={k}>{v} {k}</span>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-3">Wait ~30 seconds for telemetry and alerts to accumulate, then trigger an AI investigation from the Alerts page.</p>
+                </div>
+              )}
+              {scenarioResult?.error && (
+                <div className="rounded-xl border border-red-200 bg-red-50/50 p-4 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" /></svg>
+                  <p className="text-[13px] text-red-700">{scenarioResult.error}</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -764,6 +957,53 @@ export default function Admin() {
           {/* ===== SETTINGS TAB ===== */}
           {adminTab === 'settings' && (
             <div className="space-y-6">
+              {/* Showcase Mode Selector */}
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" /></svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-slate-800 mb-1">Showcase Mode</p>
+                  <p className="text-[11px] text-slate-400 mb-3">Select which demo to showcase. Each mode uses a separate data namespace.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {MODE_OPTIONS.map(opt => {
+                      const isActive = activeMode === opt.id
+                      const accentMap = {
+                        indigo: { border: 'border-indigo-500', bg: 'bg-indigo-50', text: 'text-indigo-700', icon: 'text-indigo-600', ring: 'ring-indigo-500/20' },
+                        red: { border: 'border-red-500', bg: 'bg-red-50', text: 'text-red-700', icon: 'text-red-600', ring: 'ring-red-500/20' },
+                      }
+                      const a = accentMap[opt.accent] || accentMap.indigo
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => handleModeSwitch(opt.id)}
+                          disabled={modeSwitching}
+                          className={`relative flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all ${
+                            isActive
+                              ? `${a.border} ${a.bg} shadow-sm`
+                              : 'border-slate-200 bg-white hover:border-slate-300'
+                          } ${modeSwitching ? 'opacity-60 cursor-wait' : ''}`}
+                        >
+                          <div className={`w-10 h-10 rounded-lg ${isActive ? a.bg : 'bg-slate-50'} ${isActive ? a.icon : 'text-slate-400'} flex items-center justify-center shrink-0`}>
+                            {opt.icon}
+                          </div>
+                          <div className="min-w-0">
+                            <p className={`text-[13px] font-semibold ${isActive ? a.text : 'text-slate-800'}`}>{opt.name}</p>
+                            <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">{opt.desc}</p>
+                            <p className="text-[10px] text-slate-300 mt-1 font-mono">namespace: {opt.namespace}</p>
+                          </div>
+                          {isActive && (
+                            <span className={`absolute top-3 right-3 w-2.5 h-2.5 rounded-full ${a.border.replace('border-', 'bg-')} ring-4 ${a.ring}`} />
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100" />
+
               {/* Gemini API Key */}
               <div className="flex items-start gap-4">
                 <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-500 flex items-center justify-center shrink-0">

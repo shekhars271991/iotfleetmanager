@@ -4,7 +4,11 @@ import json
 import math
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Any
+from aerospike import predicates as p
+from aerospike_helpers import expressions as exp
+
+from app.database import get_active_mode
+from app.domain_config import get_mode_config
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
@@ -35,55 +39,79 @@ def _summarize_values(vals):
     }
 
 
+def _ts_gte_expr(cutoff_iso: str):
+    """Build compiled Aerospike expression: timestamp >= cutoff (ISO string comparison)."""
+    return exp.GE(exp.StrBin("timestamp"), exp.Val(cutoff_iso)).compile()
+
+
+def _enabled_expr():
+    """Build compiled Aerospike expression: enabled == 1."""
+    return exp.Eq(exp.IntBin("enabled"), exp.Val(1)).compile()
+
+
 class InvestigationTools:
     """Tools available to the LLM agent for investigating IoT anomalies."""
 
-    TOOL_DESCRIPTIONS = """Available tools (respond with JSON: {"tool": "<name>", "params": {<params>}}):
+    @classmethod
+    def get_tool_descriptions(cls):
+        mode_cfg = get_mode_config(get_active_mode())
+        labels = mode_cfg["entity_labels"]
+        device_label = labels.get("device", "Device").lower()
+        group_label = labels.get("group", "Group").lower()
+        telemetry_label = labels.get("telemetry", "Telemetry").lower()
+        alert_label = labels.get("alert", "Alert").lower()
+        # Return the tool descriptions string with labels substituted
+        return f"""Available tools (respond with JSON: {{"tool": "<name>", "params": {{<params>}}}}):
 
-1. get_device_telemetry - Get recent telemetry readings for a device (single metric per device)
-   params: {"device_id": "abc123", "minutes": 60}
+1. get_device_telemetry - Get recent {telemetry_label} readings for a {device_label} (single metric per {device_label})
+   params: {{"device_id": "abc123", "minutes": 60}}
 
-2. get_device_alerts - Get recent alerts for a device
-   params: {"device_id": "abc123", "hours": 24}
+2. get_device_alerts - Get recent {alert_label}s for a {device_label}
+   params: {{"device_id": "abc123", "hours": 24}}
 
-3. get_group_overview - Get status summary of all devices in a group, grouped by metric_type
-   params: {"group_id": "xyz789"}
+3. get_group_overview - Get status summary of all {device_label}s in a {group_label}, grouped by metric_type
+   params: {{"group_id": "xyz789"}}
 
-4. compare_to_peers - Compare a device's metric to the group average (peers reporting the same metric)
-   params: {"device_id": "abc123", "minutes": 60}
+4. compare_to_peers - Compare a {device_label}'s metric to the {group_label} average (peers reporting the same metric)
+   params: {{"device_id": "abc123", "minutes": 60}}
 
-5. check_correlated_alerts - Find if other devices in the same group had alerts around the same time
-   params: {"device_id": "abc123", "minutes": 30}
+5. check_correlated_alerts - Find if other {device_label}s in the same {group_label} had {alert_label}s around the same time
+   params: {{"device_id": "abc123", "minutes": 30}}
 
-6. get_device_capabilities - Get full device profile: metric_type, tags, redundancy group, coordinates
-   params: {"device_id": "abc123"}
+6. get_device_capabilities - Get full {device_label} profile: metric_type, tags, redundancy group, coordinates
+   params: {{"device_id": "abc123"}}
 
 7. find_redundant_sensors - Find sensors in the same redundancy group and compare their latest readings
-   params: {"device_id": "abc123", "minutes": 30}
+   params: {{"device_id": "abc123", "minutes": 30}}
 
-8. find_nearby_devices - Find devices within a geographic radius and summarize their status/alerts
-   params: {"device_id": "abc123", "radius_km": 5.0}
+8. find_nearby_devices - Find {device_label}s within a geographic radius and summarize their status/{alert_label}s
+   params: {{"device_id": "abc123", "radius_km": 5.0}}
 
-9. correlate_metrics - Cross-correlate two different metric types from nearby devices by time proximity
-   params: {"device_id": "abc123", "metric_a": "temp", "metric_b": "humidity", "minutes": 60}
+9. correlate_metrics - Cross-correlate two different metric types from nearby {device_label}s by time proximity
+   params: {{"device_id": "abc123", "metric_a": "temp", "metric_b": "humidity", "minutes": 60}}
 
-10. get_environmental_context - Get aggregated readings of a metric from all nearby devices to establish a local baseline
-    params: {"device_id": "abc123", "metric": "temp", "radius_km": 10.0, "minutes": 60}
+10. get_environmental_context - Get aggregated readings of a metric from all nearby {device_label}s to establish a local baseline
+    params: {{"device_id": "abc123", "metric": "temp", "radius_km": 10.0, "minutes": 60}}
 
 11. submit_analysis - Submit your final analysis (CALL THIS WHEN DONE)
-   params: {
-     "root_cause": "DETAILED root cause (3-5 sentences minimum). Explain WHAT is happening, WHY it is happening, cite specific sensor readings and device names as evidence, describe how you ruled out alternative explanations (e.g. sensor fault vs environmental event), and explain the chain of causation.",
+   params: {{
+     "root_cause": "DETAILED root cause (3-5 sentences minimum). Explain WHAT is happening, WHY it is happening, cite specific sensor readings and {device_label} names as evidence, describe how you ruled out alternative explanations, and explain the chain of causation.",
      "corrective_actions": ["action 1", "action 2", ...],
      "confidence": "high|medium|low",
      "severity": "critical|warning|info",
      "summary": "one-line summary"
-   }"""
+   }}"""
 
     def __init__(self, as_client, namespace: str):
         self.client = as_client
         self.ns = namespace
         self.call_log = []
         self.db_calls = []
+        self._device_cache = None
+
+    # ------------------------------------------------------------------
+    # Tracked DB access helpers
+    # ------------------------------------------------------------------
 
     def _tracked_get(self, key, caller: str = ""):
         """Aerospike get() with timing tracking."""
@@ -106,8 +134,33 @@ class InvestigationTools:
             })
             raise
 
+    def _tracked_query(self, as_set: str, bin_name: str, value, caller: str = "", expr=None) -> list:
+        """Secondary-index query with optional expression filter. Returns list of bin dicts."""
+        t0 = time.perf_counter()
+        try:
+            query = self.client.query(self.ns, as_set)
+            query.where(p.equals(bin_name, value))
+            policy = {"expressions": expr} if expr else None
+            records = []
+            query.foreach(lambda r: records.append(r[2]), policy=policy)
+            elapsed = round((time.perf_counter() - t0) * 1000, 2)
+            self.db_calls.append({
+                "op": "query", "set": as_set, "key": f"{bin_name}={value}",
+                "rows": len(records), "caller": caller, "ms": elapsed, "success": True,
+                "ts": datetime.now(timezone.utc).isoformat(),
+            })
+            return records
+        except Exception as e:
+            elapsed = round((time.perf_counter() - t0) * 1000, 2)
+            self.db_calls.append({
+                "op": "query", "set": as_set, "key": f"{bin_name}={value}",
+                "rows": 0, "caller": caller, "ms": elapsed, "success": False, "error": str(e),
+                "ts": datetime.now(timezone.utc).isoformat(),
+            })
+            raise
+
     def _tracked_scan(self, as_set: str, caller: str = "") -> list:
-        """Aerospike query/scan with timing tracking."""
+        """Full-table scan (fallback only). Prefer _tracked_query when an index exists."""
         t0 = time.perf_counter()
         try:
             query = self.client.query(self.ns, as_set)
@@ -128,6 +181,29 @@ class InvestigationTools:
                 "ts": datetime.now(timezone.utc).isoformat(),
             })
             raise
+
+    def _batch_query_telemetry(self, device_ids: set, minutes: int, caller: str = "") -> list:
+        """Query telemetry for multiple devices via per-device SI queries with timestamp filter."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+        ts_expr = _ts_gte_expr(cutoff)
+        all_records = []
+        for did in device_ids:
+            rows = self._tracked_query("telemetry", "device_id", did, caller=caller, expr=ts_expr)
+            all_records.extend(rows)
+        return all_records
+
+    def _batch_query_alerts(self, device_ids: set, cutoff_iso: str, caller: str = "") -> list:
+        """Query alerts for multiple devices via per-device SI queries with timestamp filter."""
+        ts_expr = _ts_gte_expr(cutoff_iso)
+        all_records = []
+        for did in device_ids:
+            rows = self._tracked_query("alerts", "device_id", did, caller=caller, expr=ts_expr)
+            all_records.extend(rows)
+        return all_records
+
+    # ------------------------------------------------------------------
+    # Tool dispatch
+    # ------------------------------------------------------------------
 
     def execute(self, tool_name: str, params: dict) -> dict:
         dispatch = {
@@ -155,7 +231,9 @@ class InvestigationTools:
             self.call_log.append({"tool": tool_name, "params": params, "success": False, "error": str(e)})
             return {"error": str(e)}
 
-    # --- helpers ---
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     def _load_device(self, device_id: str) -> dict:
         _, _, bins = self._tracked_get((self.ns, "devices", device_id), caller="_load_device")
@@ -165,32 +243,57 @@ class InvestigationTools:
             d["redundancy_group"] = d.pop("redun_group")
         return d
 
-    def _load_all_devices(self) -> list:
-        records = self._tracked_scan("devices", caller="_load_all_devices")
+    def _devices_by_group(self, group_id: str, caller: str = "") -> list:
+        """Query devices by group_id using secondary index."""
+        records = self._tracked_query("devices", "group_id", group_id, caller=caller)
         for d in records:
             d["tags"] = _safe_json(d.get("tags"))
             if "redun_group" in d:
                 d["redundancy_group"] = d.pop("redun_group")
         return records
 
-    def _load_telemetry(self, minutes: int, device_ids: set = None) -> list:
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
-        records = self._tracked_scan("telemetry", caller="_load_telemetry")
-        out = []
-        for r in records:
-            if r.get("timestamp", "") < cutoff:
-                continue
-            if device_ids and r.get("device_id") not in device_ids:
-                continue
-            out.append(r)
-        return out
+    def _devices_by_redun_group(self, rg: str, caller: str = "") -> list:
+        """Query devices by redundancy group using secondary index."""
+        records = self._tracked_query("devices", "redun_group", rg, caller=caller)
+        for d in records:
+            d["tags"] = _safe_json(d.get("tags"))
+            if "redun_group" in d:
+                d["redundancy_group"] = d.pop("redun_group")
+        return records
 
-    # --- tools ---
+    def _load_all_devices_cached(self, caller: str = "") -> list:
+        """Load all active devices via per-status SI queries (cached per investigation)."""
+        if self._device_cache is not None:
+            return self._device_cache
+        records = []
+        for status in ("online", "offline", "warning"):
+            records.extend(self._tracked_query("devices", "status", status, caller=caller))
+        for d in records:
+            d["tags"] = _safe_json(d.get("tags"))
+            if "redun_group" in d:
+                d["redundancy_group"] = d.pop("redun_group")
+        self._device_cache = records
+        return records
+
+    def _query_device_telemetry(self, device_id: str, minutes: int, caller: str = "") -> list:
+        """Query telemetry for a single device using SI + timestamp expression."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+        ts_expr = _ts_gte_expr(cutoff)
+        return self._tracked_query("telemetry", "device_id", device_id, caller=caller, expr=ts_expr)
+
+    def _query_device_alerts(self, device_id: str, cutoff_iso: str, caller: str = "") -> list:
+        """Query alerts for a single device using SI + timestamp expression."""
+        ts_expr = _ts_gte_expr(cutoff_iso)
+        return self._tracked_query("alerts", "device_id", device_id, caller=caller, expr=ts_expr)
+
+    # ------------------------------------------------------------------
+    # Tools
+    # ------------------------------------------------------------------
 
     def _get_device_telemetry(self, params: dict) -> dict:
         device_id = params.get("device_id", "")
         minutes = int(params.get("minutes", 60))
-        readings = self._load_telemetry(minutes, {device_id})
+        readings = self._query_device_telemetry(device_id, minutes, caller="get_device_telemetry")
         readings.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
 
         if not readings:
@@ -215,9 +318,7 @@ class InvestigationTools:
         hours = int(params.get("hours", 24))
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
 
-        records = self._tracked_scan("alerts", caller="get_device_alerts")
-
-        alerts = [a for a in records if a.get("device_id") == device_id and a.get("created_at", "") >= cutoff]
+        alerts = self._query_device_alerts(device_id, cutoff, caller="get_device_alerts")
         alerts.sort(key=lambda a: a.get("created_at", ""), reverse=True)
 
         severity_counts = {}
@@ -238,8 +339,8 @@ class InvestigationTools:
 
     def _get_group_overview(self, params: dict) -> dict:
         group_id = params.get("group_id", "")
-        all_devices = self._load_all_devices()
-        devices = [d for d in all_devices if d.get("group_id") == group_id and d.get("status") != "decommissioned"]
+        devices = self._devices_by_group(group_id, caller="get_group_overview")
+        devices = [d for d in devices if d.get("status") != "decommissioned"]
 
         status_counts = {}
         metric_type_groups = {}
@@ -272,12 +373,11 @@ class InvestigationTools:
         if not group_id:
             return {"error": "Device has no group"}
 
-        all_devices = self._load_all_devices()
-        same_metric_peers = {d.get("id") for d in all_devices
-                            if d.get("group_id") == group_id
-                            and d.get("metric_type") == metric_type
+        group_devices = self._devices_by_group(group_id, caller="compare_to_peers:devices")
+        same_metric_peers = {d.get("id") for d in group_devices
+                            if d.get("metric_type") == metric_type
                             and d.get("status") != "decommissioned"}
-        telemetry = self._load_telemetry(minutes, same_metric_peers)
+        telemetry = self._batch_query_telemetry(same_metric_peers, minutes, caller="compare_to_peers:telemetry")
 
         device_vals, peer_vals = [], []
         for r in telemetry:
@@ -323,18 +423,17 @@ class InvestigationTools:
         if not group_id:
             return {"device_id": device_id, "correlated_devices": [], "message": "Device has no group"}
 
-        all_devices = self._load_all_devices()
-        group_devices = {d.get("id"): d.get("name", "") for d in all_devices
-                         if d.get("group_id") == group_id and d.get("id") != device_id}
+        group_devices = self._devices_by_group(group_id, caller="correlated_alerts:devices")
+        peer_map = {d.get("id"): d.get("name", "") for d in group_devices if d.get("id") != device_id}
 
-        all_alerts = self._tracked_scan("alerts", caller="check_correlated_alerts")
+        peer_alerts = self._batch_query_alerts(set(peer_map.keys()), cutoff, caller="correlated_alerts:alerts")
 
         correlated = {}
-        for a in all_alerts:
+        for a in peer_alerts:
             did = a.get("device_id", "")
-            if did in group_devices and a.get("created_at", "") >= cutoff:
+            if did in peer_map:
                 if did not in correlated:
-                    correlated[did] = {"name": group_devices[did], "alerts": []}
+                    correlated[did] = {"name": peer_map[did], "alerts": []}
                 correlated[did]["alerts"].append({"message": a.get("message", ""), "severity": a.get("severity", "")})
 
         return {
@@ -372,14 +471,14 @@ class InvestigationTools:
         if not rg:
             return {"device_id": device_id, "redundancy_group": None, "peers": [], "message": "Device has no redundancy group"}
 
-        all_devices = self._load_all_devices()
-        peers = [d for d in all_devices if d.get("redundancy_group") == rg and d.get("id") != device_id and d.get("status") != "decommissioned"]
+        rg_devices = self._devices_by_redun_group(rg, caller="find_redundant:devices")
+        peers = [d for d in rg_devices if d.get("id") != device_id and d.get("status") != "decommissioned"]
 
         if not peers:
             return {"device_id": device_id, "redundancy_group": rg, "peers": [], "message": "No redundant peers found"}
 
         peer_ids = {d.get("id") for d in peers} | {device_id}
-        telemetry = self._load_telemetry(minutes, peer_ids)
+        telemetry = self._batch_query_telemetry(peer_ids, minutes, caller="find_redundant:telemetry")
 
         per_device = {}
         for r in telemetry:
@@ -422,7 +521,7 @@ class InvestigationTools:
         if lat == 0.0 and lon == 0.0:
             return {"device_id": device_id, "nearby": [], "message": "Device has no coordinates"}
 
-        all_devices = self._load_all_devices()
+        all_devices = self._load_all_devices_cached(caller="find_nearby:devices")
         nearby = []
         for d in all_devices:
             did = d.get("id", "")
@@ -442,14 +541,13 @@ class InvestigationTools:
                     "group_id": d.get("group_id", ""),
                 })
 
-        all_alerts = self._tracked_scan("alerts", caller="find_nearby_devices")
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         nearby_ids = {d["id"] for d in nearby}
+        nearby_alerts = self._batch_query_alerts(nearby_ids, cutoff, caller="find_nearby:alerts")
         alert_counts = {}
-        for a in all_alerts:
+        for a in nearby_alerts:
             did = a.get("device_id", "")
-            if did in nearby_ids and a.get("created_at", "") >= cutoff:
-                alert_counts[did] = alert_counts.get(did, 0) + 1
+            alert_counts[did] = alert_counts.get(did, 0) + 1
 
         for d in nearby:
             d["recent_alert_count"] = alert_counts.get(d["id"], 0)
@@ -471,24 +569,21 @@ class InvestigationTools:
 
         dev = self._load_device(device_id)
         group_id = dev.get("group_id", "")
-        rg = dev.get("redundancy_group", "")
 
-        all_devices = self._load_all_devices()
+        if not group_id:
+            return {"error": "Device has no group for correlation"}
+
+        group_devices = self._devices_by_group(group_id, caller="correlate:devices")
         related_ids = set()
-        for d in all_devices:
-            did = d.get("id", "")
+        for d in group_devices:
             mt = d.get("metric_type", "")
             if d.get("status") == "decommissioned":
                 continue
-            if mt not in (metric_a, metric_b):
-                continue
-            if group_id and d.get("group_id") == group_id:
-                related_ids.add(did)
-            elif rg and d.get("redundancy_group") == rg:
-                related_ids.add(did)
+            if mt in (metric_a, metric_b):
+                related_ids.add(d.get("id", ""))
         related_ids.add(device_id)
 
-        telemetry = self._load_telemetry(minutes, related_ids)
+        telemetry = self._batch_query_telemetry(related_ids, minutes, caller="correlate:telemetry")
 
         bucket_size = 30
         a_buckets = {}
@@ -550,7 +645,7 @@ class InvestigationTools:
         if lat == 0.0 and lon == 0.0:
             return {"device_id": device_id, "message": "Device has no coordinates, cannot compute environmental context"}
 
-        all_devices = self._load_all_devices()
+        all_devices = self._load_all_devices_cached(caller="env_context:devices")
         nearby_ids = set()
         for d in all_devices:
             did = d.get("id", "")
@@ -567,7 +662,7 @@ class InvestigationTools:
                 nearby_ids.add(did)
 
         nearby_ids.add(device_id)
-        telemetry = self._load_telemetry(minutes, nearby_ids)
+        telemetry = self._batch_query_telemetry(nearby_ids, minutes, caller="env_context:telemetry")
 
         this_vals = []
         env_vals = []

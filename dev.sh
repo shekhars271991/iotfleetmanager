@@ -53,21 +53,16 @@ export AEROSPIKE_NAMESPACE=iotfleet
 export KAFKA_BOOTSTRAP=localhost:9094
 export GEMINI_API_KEY=${GEMINI_API_KEY:-""}
 
-echo "==> Seeding database..."
-python -m app.seed
-
 echo "==> Starting backend on http://localhost:4000"
 uvicorn app.main:app --host 0.0.0.0 --port 4000 --reload &
 BACKEND_PID=$!
 cd ..
 
-# Wait for backend to be ready, then seed device metadata
 echo "==> Waiting for backend to be ready..."
 until curl -sf http://localhost:4000/health >/dev/null 2>&1; do
   sleep 1
 done
-echo "==> Seeding device metadata (locations, metric types, redundancy groups)..."
-curl -sf -X POST http://localhost:4000/api/admin/seed-device-metadata | python3 -m json.tool 2>/dev/null || echo "  (seed skipped or no devices yet)"
+echo "==> Backend is ready."
 
 # Start producer locally
 echo "==> Starting telemetry producer..."
@@ -104,7 +99,7 @@ cd ..
 
 echo ""
 echo "============================================"
-echo "  IoT Fleet Manager - Dev Servers Running"
+echo "  Aerospike Showcase - Dev Servers Running"
 echo "============================================"
 echo "  Frontend:  http://localhost:8080"
 echo "  Backend:   http://localhost:4000"
@@ -113,6 +108,10 @@ echo "  Aerospike: localhost:3010 (Docker)"
 echo "  Kafka:     localhost:9094 (Docker)"
 echo "  Producer:  local (PID $PRODUCER_PID)"
 echo "  Consumer:  local (PID $CONSUMER_PID)"
+echo "============================================"
+echo "  Load a showcase scenario:"
+echo "    ./setupiot.sh       (IoT Fleet demo)"
+echo "    ./setupsecurity.sh  (Security Ops demo)"
 echo "============================================"
 echo "  Press Ctrl+C to stop all services"
 echo "============================================"

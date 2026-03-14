@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.database import get_client, NAMESPACE
+from app.database import get_client, get_namespace
 from app.schemas import DashboardStats
 
 router = APIRouter(tags=["dashboard"])
@@ -20,14 +20,14 @@ async def get_stats():
     group_data = {}
 
     groups_map = {}
-    gq = client.query(NAMESPACE, "groups")
+    gq = client.query(get_namespace(), "groups")
     def g_cb(record):
         _, _, bins = record
         gid = bins.get("id", "")
         groups_map[gid] = bins.get("name", "Unknown")
     gq.foreach(g_cb)
 
-    query = client.query(NAMESPACE, "devices")
+    query = client.query(get_namespace(), "devices")
     def callback(record):
         nonlocal total, online, offline, warning, decommissioned
         _, _, bins = record
@@ -70,7 +70,7 @@ async def get_stats():
     unacknowledged = 0
     total_alerts = 0
     try:
-        aq = client.query(NAMESPACE, "alerts")
+        aq = client.query(get_namespace(), "alerts")
         def alert_cb(record):
             nonlocal unacknowledged, total_alerts
             _, _, bins = record
@@ -88,7 +88,7 @@ async def get_stats():
     inv_running = 0
     inv_failed = 0
     try:
-        iq = client.query(NAMESPACE, "investigations")
+        iq = client.query(get_namespace(), "investigations")
         def inv_cb(record):
             nonlocal inv_total, inv_completed, inv_running, inv_failed
             _, _, bins = record
@@ -107,7 +107,7 @@ async def get_stats():
     active_rules = 0
     total_rules = 0
     try:
-        rq = client.query(NAMESPACE, "rules")
+        rq = client.query(get_namespace(), "rules")
         def rule_cb(record):
             nonlocal active_rules, total_rules
             _, _, bins = record
@@ -120,7 +120,7 @@ async def get_stats():
 
     active_simulations = 0
     try:
-        sq = client.query(NAMESPACE, "simulations")
+        sq = client.query(get_namespace(), "simulations")
         def sim_cb(record):
             nonlocal active_simulations
             _, _, bins = record

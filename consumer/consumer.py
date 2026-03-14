@@ -18,7 +18,31 @@ from kafka.errors import NoBrokersAvailable
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9094")
 AEROSPIKE_HOST = os.getenv("AEROSPIKE_HOST", "localhost")
 AEROSPIKE_PORT = int(os.getenv("AEROSPIKE_PORT", "3000"))
-NAMESPACE = os.getenv("AEROSPIKE_NAMESPACE", "iotfleet")
+CONFIG_NAMESPACE = "iotfleet"
+
+_active_ns = "iotfleet"
+_ns_last_checked = 0
+NS_CHECK_INTERVAL = 30
+
+
+def get_active_namespace(as_client):
+    try:
+        _, _, bins = as_client.get((CONFIG_NAMESPACE, "config", "showcase_mode"))
+        mode = bins.get("value", "iot")
+        return {"iot": "iotfleet", "security": "secfleet"}.get(mode, "iotfleet")
+    except Exception:
+        return "iotfleet"
+
+
+def refresh_namespace(as_client):
+    global _active_ns, _ns_last_checked
+    now = time.time()
+    if now - _ns_last_checked > NS_CHECK_INTERVAL:
+        _active_ns = get_active_namespace(as_client)
+        _ns_last_checked = now
+    return _active_ns
+
+
 TOPIC = "iot-telemetry"
 TELEMETRY_SET = "telemetry"
 ALERT_SET = "alerts"
@@ -30,6 +54,10 @@ METRIC_LABELS = {
     "fps": "FPS", "uplink_kbps": "Uplink", "pressure": "Pressure",
     "noise_db": "Noise", "vibration": "Vibration", "lux": "Light",
     "position": "Position", "power_on": "Power",
+    "failed_logins": "Failed Logins", "network_anomalies": "Network Anomaly",
+    "port_scans": "Port Scans", "malware_detections": "Malware",
+    "firewall_blocks": "Firewall Blocks", "auth_failures": "Auth Failures",
+    "data_transfer_mb": "Data Transfer",
 }
 
 METRIC_UNITS = {
@@ -37,6 +65,9 @@ METRIC_UNITS = {
     "mem_usage": "%", "storage_pct": "%", "fps": "", "uplink_kbps": "kbps",
     "pressure": "hPa", "noise_db": "dB", "vibration": "g", "lux": "lx",
     "position": "%", "power_on": "",
+    "failed_logins": "/min", "network_anomalies": "", "port_scans": "/min",
+    "malware_detections": "", "firewall_blocks": "/min", "auth_failures": "/min",
+    "data_transfer_mb": "MB/min",
 }
 
 OP_FNS = {
@@ -86,16 +117,17 @@ def connect_aerospike():
 
 
 def ensure_index(client):
-    try:
-        client.index_string_create(NAMESPACE, TELEMETRY_SET, "device_id", "idx_telem_device")
-    except aerospike_ex.IndexFoundError:
-        pass
+    for ns in ("iotfleet", "secfleet"):
+        try:
+            client.index_string_create(ns, TELEMETRY_SET, "device_id", "idx_telem_device")
+        except aerospike_ex.IndexFoundError:
+            pass
 
 
 def create_alert(as_client, device_id, severity, message, rule_scope="", rule_id=""):
     alert_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    key = (NAMESPACE, ALERT_SET, alert_id)
+    key = (_active_ns, ALERT_SET, alert_id)
     bins = {
         "id": alert_id, "device_id": device_id, "severity": severity,
         "message": message, "created_at": now, "acknowledged": 0,
@@ -113,7 +145,7 @@ def load_rules(as_client):
 
     rules = []
     try:
-        query = as_client.query(NAMESPACE, RULE_SET)
+        query = as_client.query(_active_ns, RULE_SET)
         query.foreach(lambda r: rules.append(r[2]))
     except Exception as e:
         print(f"Error loading rules: {e}")
@@ -132,7 +164,7 @@ def load_device_groups(as_client):
 
     mapping = {}
     try:
-        query = as_client.query(NAMESPACE, "devices")
+        query = as_client.query(_active_ns, "devices")
         query.foreach(lambda r: mapping.update({r[2].get("id", ""): r[2].get("group_id", "")}))
     except Exception:
         return _device_group_cache
@@ -197,7 +229,7 @@ def evaluate_rules(device_id, metric, value, as_client):
 
 
 def write_heartbeat(as_client, records, alerts):
-    key = (NAMESPACE, "config", "hb_consumer")
+    key = (CONFIG_NAMESPACE, "config", "hb_consumer")
     try:
         as_client.put(key, {
             "id": "hb_consumer",
@@ -212,6 +244,7 @@ def write_heartbeat(as_client, records, alerts):
 def main():
     kafka_consumer = connect_kafka()
     as_client = connect_aerospike()
+    refresh_namespace(as_client)
 
     count = 0
     alert_count = 0
@@ -234,7 +267,7 @@ def main():
 
         ts_ms = int(datetime.fromisoformat(timestamp).timestamp() * 1000)
         record_key = f"{device_id}:{ts_ms}"
-        key = (NAMESPACE, TELEMETRY_SET, record_key)
+        key = (_active_ns, TELEMETRY_SET, record_key)
 
         bins = {
             "device_id": device_id,
@@ -244,7 +277,7 @@ def main():
         }
         as_client.put(key, bins)
 
-        device_key = (NAMESPACE, "devices", device_id)
+        device_key = (_active_ns, "devices", device_id)
         try:
             as_client.put(device_key, {"last_seen": timestamp})
         except Exception:
@@ -253,6 +286,9 @@ def main():
         new_alerts = evaluate_rules(device_id, metric, value, as_client)
         alert_count += new_alerts
         count += 1
+
+        if count % 50 == 0:
+            refresh_namespace(as_client)
 
         if count - last_hb >= 10:
             write_heartbeat(as_client, count, alert_count)

@@ -5,13 +5,13 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
-from app.database import get_client, NAMESPACE
+from app.database import get_client, get_namespace, get_active_mode
+from app.domain_config import CONFIG_NAMESPACE, CONFIG_SET, MODE_KEY, NAMESPACES, MODES, get_mode_config
 from app.schemas import SimulationOut
 
 router = APIRouter(tags=["admin"])
 
 SIM_SET = "simulations"
-CONFIG_SET = "config"
 
 
 # ---------------------------------------------------------------------------
@@ -20,7 +20,7 @@ CONFIG_SET = "config"
 
 def _read_heartbeat(client, key_id):
     try:
-        _, _, bins = client.get((NAMESPACE, CONFIG_SET, key_id))
+        _, _, bins = client.get((CONFIG_NAMESPACE, CONFIG_SET, key_id))
         return bins
     except Exception:
         return None
@@ -36,7 +36,7 @@ async def get_gemini_key_status():
     env_key = os.environ.get("GEMINI_API_KEY", "")
     user_key = ""
     try:
-        _, _, bins = client.get((NAMESPACE, CONFIG_SET, GEMINI_KEY_ID))
+        _, _, bins = client.get((CONFIG_NAMESPACE, CONFIG_SET, GEMINI_KEY_ID))
         user_key = bins.get("value", "")
     except Exception:
         pass
@@ -58,7 +58,7 @@ async def set_gemini_key(body: dict):
     if not key_value:
         raise HTTPException(status_code=400, detail="api_key is required")
     client = get_client()
-    client.put((NAMESPACE, CONFIG_SET, GEMINI_KEY_ID), {
+    client.put((CONFIG_NAMESPACE, CONFIG_SET, GEMINI_KEY_ID), {
         "value": key_value,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
@@ -69,10 +69,62 @@ async def set_gemini_key(body: dict):
 async def delete_gemini_key():
     client = get_client()
     try:
-        client.remove((NAMESPACE, CONFIG_SET, GEMINI_KEY_ID))
+        client.remove((CONFIG_NAMESPACE, CONFIG_SET, GEMINI_KEY_ID))
     except Exception:
         pass
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Showcase mode
+# ---------------------------------------------------------------------------
+
+@router.get("/admin/showcase-mode")
+async def get_showcase_mode():
+    mode = get_active_mode()
+    cfg = get_mode_config(mode)
+    return {"mode": mode, "config": cfg}
+
+
+@router.put("/admin/showcase-mode")
+async def set_showcase_mode(body: dict):
+    mode = body.get("mode", "").strip()
+    if mode not in NAMESPACES:
+        raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}. Must be one of {list(NAMESPACES.keys())}")
+    client = get_client()
+    client.put((CONFIG_NAMESPACE, CONFIG_SET, MODE_KEY), {
+        "value": mode,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"mode": mode, "config": get_mode_config(mode)}
+
+
+@router.get("/domain-config")
+async def get_domain_config_endpoint():
+    mode = get_active_mode()
+    return get_mode_config(mode)
+
+
+# ---------------------------------------------------------------------------
+# Demo scenarios
+# ---------------------------------------------------------------------------
+
+@router.post("/admin/setup-scenario/{scenario_id}")
+async def run_setup_scenario(scenario_id: str):
+    """Run a pre-built demo scenario (iot or security)."""
+    from app.scenarios import setup_iot_scenario, setup_security_scenario
+
+    runners = {
+        "iot": setup_iot_scenario,
+        "security": setup_security_scenario,
+    }
+    runner = runners.get(scenario_id)
+    if not runner:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown scenario: {scenario_id}. Must be one of {list(runners.keys())}",
+        )
+    return runner()
 
 
 CLEARABLE_SETS = {
@@ -104,7 +156,7 @@ async def clear_data(body: dict):
             continue
         try:
             count = 0
-            scan = client.scan(NAMESPACE, set_name)
+            scan = client.scan(get_namespace(), set_name)
             keys = []
             scan.foreach(lambda r: keys.append(r[0]))
             for k in keys:
@@ -173,56 +225,8 @@ async def get_system_status():
         },
     }
 
-TEMPLATES = [
-    {
-        "id": "normal",
-        "name": "Normal",
-        "description": "Standard telemetry within expected operating ranges",
-        "icon": "chart",
-        "color": "blue",
-        "options": [],
-    },
-    {
-        "id": "anomaly",
-        "name": "Anomaly Injection",
-        "description": "Injects random anomalies like temperature spikes, battery drops, and metric drifts",
-        "icon": "warning",
-        "color": "amber",
-        "options": [
-            {"key": "anomaly_rate", "label": "Anomaly Rate (%)", "type": "number", "default": 15, "min": 1, "max": 50},
-        ],
-    },
-    {
-        "id": "stress",
-        "name": "Stress Test",
-        "description": "Pushes all metrics to near-critical levels to test alerting thresholds",
-        "icon": "bolt",
-        "color": "red",
-        "options": [
-            {"key": "intensity", "label": "Intensity (%)", "type": "number", "default": 80, "min": 50, "max": 100},
-        ],
-    },
-    {
-        "id": "degradation",
-        "name": "Gradual Degradation",
-        "description": "Simulates device aging with slowly worsening metrics over time",
-        "icon": "trending_down",
-        "color": "orange",
-        "options": [
-            {"key": "degrade_rate", "label": "Degradation Speed", "type": "number", "default": 5, "min": 1, "max": 20},
-        ],
-    },
-    {
-        "id": "intermittent",
-        "name": "Intermittent Connectivity",
-        "description": "Devices randomly drop offline and reconnect, simulating network issues",
-        "icon": "wifi_off",
-        "color": "purple",
-        "options": [
-            {"key": "offline_pct", "label": "Offline Chance (%)", "type": "number", "default": 20, "min": 5, "max": 50},
-        ],
-    },
-]
+def _get_templates():
+    return get_mode_config(get_active_mode()).get("simulation_templates", [])
 
 
 def _sim_bins_to_out(bins: dict) -> SimulationOut:
@@ -243,13 +247,13 @@ def _sim_bins_to_out(bins: dict) -> SimulationOut:
 
 @router.get("/admin/templates")
 async def list_templates():
-    return TEMPLATES
+    return _get_templates()
 
 
 @router.get("/admin/simulations", response_model=list[SimulationOut])
 async def list_simulations():
     client = get_client()
-    query = client.query(NAMESPACE, SIM_SET)
+    query = client.query(get_namespace(), SIM_SET)
     results = []
 
     def callback(record):
@@ -268,7 +272,7 @@ async def create_simulation(body: dict):
     now = datetime.now(timezone.utc).isoformat()
 
     template = body.get("template", "normal")
-    valid_ids = {t["id"] for t in TEMPLATES}
+    valid_ids = {t["id"] for t in _get_templates()}
     if template not in valid_ids:
         raise HTTPException(status_code=400, detail=f"Invalid template: {template}")
 
@@ -289,7 +293,7 @@ async def create_simulation(body: dict):
         "msgs_sent": 0,
         "cycle_count": 0,
     }
-    key = (NAMESPACE, SIM_SET, sim_id)
+    key = (get_namespace(), SIM_SET, sim_id)
     client.put(key, bins)
     return _sim_bins_to_out(bins)
 
@@ -297,7 +301,7 @@ async def create_simulation(body: dict):
 @router.put("/admin/simulations/{sim_id}/start", response_model=SimulationOut)
 async def start_simulation(sim_id: str):
     client = get_client()
-    key = (NAMESPACE, SIM_SET, sim_id)
+    key = (get_namespace(), SIM_SET, sim_id)
     try:
         _, _, bins = client.get(key)
     except Exception:
@@ -311,7 +315,7 @@ async def start_simulation(sim_id: str):
 @router.put("/admin/simulations/{sim_id}/pause", response_model=SimulationOut)
 async def pause_simulation(sim_id: str):
     client = get_client()
-    key = (NAMESPACE, SIM_SET, sim_id)
+    key = (get_namespace(), SIM_SET, sim_id)
     try:
         _, _, bins = client.get(key)
     except Exception:
@@ -325,7 +329,7 @@ async def pause_simulation(sim_id: str):
 @router.put("/admin/simulations/{sim_id}/stop", response_model=SimulationOut)
 async def stop_simulation(sim_id: str):
     client = get_client()
-    key = (NAMESPACE, SIM_SET, sim_id)
+    key = (get_namespace(), SIM_SET, sim_id)
     try:
         _, _, bins = client.get(key)
     except Exception:
@@ -340,7 +344,7 @@ async def stop_simulation(sim_id: str):
 @router.delete("/admin/simulations/{sim_id}", status_code=204)
 async def delete_simulation(sim_id: str):
     client = get_client()
-    key = (NAMESPACE, SIM_SET, sim_id)
+    key = (get_namespace(), SIM_SET, sim_id)
     try:
         client.remove(key)
     except Exception:
@@ -353,8 +357,10 @@ async def delete_simulation(sim_id: str):
 
 import random
 
-# Physical zones within a facility — each zone is a tight cluster of coords
-_ZONE_TEMPLATES = [
+# ---------------------------------------------------------------------------
+# IoT zone templates
+# ---------------------------------------------------------------------------
+_IOT_ZONE_TEMPLATES = [
     {"name": "cold-storage-a",  "lat": 37.77490, "lon": -122.41940, "radius": 0.0003, "env": "indoor",  "floor": "1"},
     {"name": "cold-storage-b",  "lat": 37.77510, "lon": -122.41920, "radius": 0.0003, "env": "indoor",  "floor": "1"},
     {"name": "server-room",     "lat": 37.77550, "lon": -122.41900, "radius": 0.0002, "env": "indoor",  "floor": "2"},
@@ -367,8 +373,7 @@ _ZONE_TEMPLATES = [
     {"name": "office-wing",     "lat": 37.77530, "lon": -122.41960, "radius": 0.0003, "env": "indoor",  "floor": "3"},
 ]
 
-# What metrics make sense per zone environment
-_ZONE_METRIC_MIX = {
+_IOT_ZONE_METRIC_MIX = {
     "cold-storage-a":  ["temp", "temp", "humidity", "humidity", "temp", "pressure"],
     "cold-storage-b":  ["temp", "temp", "humidity", "temp", "humidity", "pressure"],
     "server-room":     ["temp", "humidity", "noise_db", "vibration", "temp", "humidity"],
@@ -385,42 +390,70 @@ _GATEWAY_METRICS = ["cpu_usage", "mem_usage", "uplink_kbps"]
 _ACTUATOR_METRICS = ["position", "power_on", "battery_pct"]
 _CAMERA_METRICS = ["fps", "storage_pct", "battery_pct"]
 
+# ---------------------------------------------------------------------------
+# Security zone templates
+# ---------------------------------------------------------------------------
+_SEC_ZONE_TEMPLATES = [
+    {"name": "corp-lan",       "lat": 37.77490, "lon": -122.41940, "radius": 0.0004, "env": "office",    "floor": "2"},
+    {"name": "dmz",            "lat": 37.77520, "lon": -122.41910, "radius": 0.0003, "env": "datacenter","floor": "1"},
+    {"name": "server-farm",    "lat": 37.77550, "lon": -122.41880, "radius": 0.0003, "env": "datacenter","floor": "1"},
+    {"name": "remote-vpn",     "lat": 37.78000, "lon": -122.41000, "radius": 0.0020, "env": "remote",    "floor": "N/A"},
+    {"name": "iot-segment",    "lat": 37.77460, "lon": -122.42000, "radius": 0.0004, "env": "factory",   "floor": "G"},
+    {"name": "guest-wifi",     "lat": 37.77530, "lon": -122.41960, "radius": 0.0003, "env": "office",    "floor": "1"},
+]
+
+_SEC_ZONE_METRIC_MIX = {
+    "corp-lan":     ["failed_logins", "auth_failures", "failed_logins", "port_scans", "network_anomalies", "auth_failures"],
+    "dmz":          ["network_anomalies", "firewall_blocks", "port_scans", "network_anomalies", "firewall_blocks", "auth_failures"],
+    "server-farm":  ["cpu_usage", "mem_usage", "data_transfer_mb", "malware_detections", "cpu_usage", "data_transfer_mb"],
+    "remote-vpn":   ["auth_failures", "failed_logins", "network_anomalies", "auth_failures", "failed_logins", "port_scans"],
+    "iot-segment":  ["network_anomalies", "port_scans", "firewall_blocks", "network_anomalies", "malware_detections", "port_scans"],
+    "guest-wifi":   ["auth_failures", "network_anomalies", "failed_logins", "firewall_blocks", "auth_failures", "network_anomalies"],
+}
+
+_SEC_DEVICE_TYPE_METRICS = {
+    "server":      ["cpu_usage", "mem_usage", "data_transfer_mb"],
+    "workstation":  ["failed_logins", "auth_failures", "malware_detections"],
+    "firewall":     ["firewall_blocks", "network_anomalies", "port_scans"],
+    "router":       ["network_anomalies", "port_scans", "data_transfer_mb"],
+    "switch":       ["port_scans", "network_anomalies", "firewall_blocks"],
+    "endpoint":     ["auth_failures", "failed_logins", "malware_detections"],
+}
+
 
 @router.post("/admin/seed-device-metadata")
 async def seed_device_metadata():
     """Intelligently assign locations, metric types, and redundancy groups.
 
-    Strategy:
-    - Group devices into physical zones (tight lat/lng clusters).
-    - Within each zone, place multiple sensors measuring the same metric nearby
-      (these become a redundancy group — verifying each other's readings).
-    - Also place sensors measuring different metrics in the same zone
-      (co-located but measuring different things, useful for cross-correlation).
-    - Some zones share similar coordinates so "nearby device" queries find peers.
+    Adapts to the active showcase mode — uses IoT zone templates for iot mode
+    and security network segment templates for security mode. If a device
+    already has a metric_type set, it is preserved.
     """
+    mode = get_active_mode()
+    is_security = mode == "security"
+    zone_templates = _SEC_ZONE_TEMPLATES if is_security else _IOT_ZONE_TEMPLATES
+    zone_metric_mix = _SEC_ZONE_METRIC_MIX if is_security else _IOT_ZONE_METRIC_MIX
+
     client = get_client()
-    query = client.query(NAMESPACE, "devices")
+    query = client.query(get_namespace(), "devices")
     devices = []
     query.foreach(lambda r: devices.append(r[2]))
 
     groups = {}
-    gq = client.query(NAMESPACE, "groups")
+    gq = client.query(get_namespace(), "groups")
     gq.foreach(lambda r: groups.update({r[2].get("id", ""): r[2].get("name", "")}))
 
-    # Sort devices by group then type for deterministic assignment
     random.seed(42)
     devices.sort(key=lambda d: (d.get("group_id", ""), d.get("type", ""), d.get("id", "")))
 
-    # Build a mapping: group_id -> zone
     group_ids = sorted(set(d.get("group_id", "") for d in devices if d.get("group_id")))
     group_zone_map = {}
     for i, gid in enumerate(group_ids):
-        zone = _ZONE_TEMPLATES[i % len(_ZONE_TEMPLATES)]
+        zone = zone_templates[i % len(zone_templates)]
         group_zone_map[gid] = zone
 
-    # Per-zone sensor placement tracking
-    zone_sensor_idx = {}   # zone_name -> index into that zone's metric mix
-    zone_rg_members = {}   # rg_key -> count of members
+    zone_sensor_idx = {}
+    zone_rg_members = {}
 
     updated = 0
     stats = {"redundancy_groups": set(), "zones_used": set(), "metric_distribution": {}}
@@ -432,14 +465,26 @@ async def seed_device_metadata():
 
         zone = group_zone_map.get(gid)
         if not zone:
-            zone = _ZONE_TEMPLATES[hash(did) % len(_ZONE_TEMPLATES)]
+            zone = zone_templates[hash(did) % len(zone_templates)]
 
         zname = zone["name"]
         stats["zones_used"].add(zname)
 
-        # -- Determine metric_type based on device type --
-        if dtype == "sensor":
-            mix = _ZONE_METRIC_MIX.get(zname, ["temp", "humidity", "pressure"])
+        # -- Determine metric_type --
+        existing_metric = dev.get("metric_type", "")
+        if existing_metric:
+            metric_type = existing_metric
+        elif is_security:
+            type_metrics = _SEC_DEVICE_TYPE_METRICS.get(dtype)
+            if type_metrics:
+                metric_type = type_metrics[hash(did) % len(type_metrics)]
+            else:
+                mix = zone_metric_mix.get(zname, ["network_anomalies", "auth_failures"])
+                zone_sensor_idx.setdefault(zname, 0)
+                metric_type = mix[zone_sensor_idx[zname] % len(mix)]
+                zone_sensor_idx[zname] += 1
+        elif dtype == "sensor":
+            mix = zone_metric_mix.get(zname, ["temp", "humidity", "pressure"])
             zone_sensor_idx.setdefault(zname, 0)
             metric_type = mix[zone_sensor_idx[zname] % len(mix)]
             zone_sensor_idx[zname] += 1
@@ -486,7 +531,10 @@ async def seed_device_metadata():
             "environment": zone["env"],
             "floor": zone["floor"],
         }
-        if dtype == "sensor":
+        if is_security:
+            tags["segment"] = zname
+            tags["reports"] = metric_type
+        elif dtype == "sensor":
             tags["measures"] = metric_type
         elif dtype == "gateway":
             tags["role"] = "edge-compute"
@@ -496,7 +544,7 @@ async def seed_device_metadata():
             tags["controls"] = metric_type
 
         # -- Write --
-        key = (NAMESPACE, "devices", did)
+        key = (get_namespace(), "devices", did)
         dev["latitude"] = lat
         dev["longitude"] = lon
         dev["redun_group"] = redundancy_group

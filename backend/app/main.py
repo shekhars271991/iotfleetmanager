@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.database import get_client, NAMESPACE
+from app.database import get_client, get_namespace
 from app.routers import devices, groups, dashboard, alerts, admin, aggregations, rules, investigations
 
 app = FastAPI(title="IoT Fleet Manager API", version="1.0.0")
@@ -36,7 +36,7 @@ async def device_health_monitor():
         try:
             client = get_client()
             now = datetime.now(timezone.utc)
-            query = client.query(NAMESPACE, "devices")
+            query = client.query(get_namespace(), "devices")
             records = []
             query.foreach(lambda r: records.append(r))
 
@@ -58,7 +58,7 @@ async def device_health_monitor():
                 if not device_id:
                     continue
 
-                key = (NAMESPACE, "devices", device_id)
+                key = (get_namespace(), "devices", device_id)
                 if status in ("online", "warning") and age > OFFLINE_THRESHOLD_SECS:
                     client.put(key, {"status": "offline"})
                 elif status == "offline" and age < ONLINE_THRESHOLD_SECS:
@@ -79,7 +79,7 @@ async def aggregation_worker():
 
             # Load all enabled jobs
             jobs = []
-            query = client.query(NAMESPACE, "agg_jobs")
+            query = client.query(get_namespace(), "agg_jobs")
             query.foreach(lambda r: jobs.append(r[2]))
             enabled_jobs = [j for j in jobs if j.get("enabled", 0)]
 
@@ -95,7 +95,7 @@ async def aggregation_worker():
                 cutoff = (now - __import__("datetime").timedelta(seconds=window)).isoformat()
 
                 # Find devices in this group
-                dev_query = client.query(NAMESPACE, "devices")
+                dev_query = client.query(get_namespace(), "devices")
                 device_ids = []
                 dev_query.foreach(lambda r: device_ids.append(r[2]["id"]) if r[2].get("group_id") == group_id and r[2].get("status") != "decommissioned" else None)
 
@@ -104,7 +104,7 @@ async def aggregation_worker():
 
                 # Fetch telemetry within window for these devices
                 device_values = {}
-                telem_query = client.query(NAMESPACE, "telemetry")
+                telem_query = client.query(get_namespace(), "telemetry")
                 all_values = []
 
                 def collect(record):
@@ -147,7 +147,7 @@ async def aggregation_worker():
                 if level == "group":
                     value, count = compute(all_values)
                     result_key = f"agg:{job_id}:group"
-                    client.put((NAMESPACE, "agg_results", result_key), {
+                    client.put((get_namespace(), "agg_results", result_key), {
                         "job_id": job_id,
                         "job_name": job_name,
                         "group_id": group_id,
@@ -164,7 +164,7 @@ async def aggregation_worker():
                     for did, vals in device_values.items():
                         value, count = compute(vals)
                         result_key = f"agg:{job_id}:{did}"
-                        client.put((NAMESPACE, "agg_results", result_key), {
+                        client.put((get_namespace(), "agg_results", result_key), {
                             "job_id": job_id,
                             "job_name": job_name,
                             "group_id": group_id,

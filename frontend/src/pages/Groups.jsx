@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api/client'
+import { useShowcase } from '../context/ShowcaseContext'
 
 const inputCls = 'w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 outline-none transition-colors'
 
 export default function Groups() {
+  const { labels } = useShowcase()
   const [groups, setGroups] = useState([])
   const [devices, setDevices] = useState([])
   const [loading, setLoading] = useState(true)
@@ -60,7 +62,7 @@ export default function Groups() {
     <div className="p-8 space-y-6 max-w-[1400px]">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-800 tracking-tight">Device Groups</h2>
+          <h2 className="text-2xl font-semibold text-slate-800 tracking-tight">{labels.devices} {labels.groups}</h2>
           <p className="text-sm text-slate-500 mt-0.5">Organize devices by location or function</p>
         </div>
         <button
@@ -87,10 +89,10 @@ export default function Groups() {
 
       {showForm && (
         <form onSubmit={handleCreate} className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4">Create Group</h3>
+          <h3 className="text-sm font-semibold text-slate-800 mb-4">Create {labels.group}</h3>
           <div className="flex gap-4 items-end">
             <div className="flex-1">
-              <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Group Name</label>
+              <label className="block text-[13px] font-medium text-slate-600 mb-1.5">{labels.group} Name</label>
               <input
                 value={newGroup.name}
                 onChange={e => setNewGroup(prev => ({ ...prev, name: e.target.value }))}
@@ -159,7 +161,7 @@ export default function Groups() {
               </div>
 
               <div className="flex items-center gap-3 text-[11px] flex-wrap">
-                <span className="text-slate-500 font-medium">{groupDevices.length} device{groupDevices.length !== 1 ? 's' : ''}</span>
+                <span className="text-slate-500 font-medium">{groupDevices.length} {groupDevices.length !== 1 ? labels.devices : labels.device}</span>
                 <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{online}</span>
                 {offline > 0 && <span className="flex items-center gap-1 text-red-500"><span className="w-1.5 h-1.5 rounded-full bg-red-500" />{offline}</span>}
                 {warning > 0 && <span className="flex items-center gap-1 text-amber-500"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{warning}</span>}
@@ -175,8 +177,8 @@ export default function Groups() {
             <svg className="w-10 h-10 text-slate-300 mx-auto mb-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 7.125C2.25 6.504 2.754 6 3.375 6h6c.621 0 1.125.504 1.125 1.125v3.75c0 .621-.504 1.125-1.125 1.125h-6a1.125 1.125 0 0 1-1.125-1.125v-3.75ZM14.25 8.625c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v8.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 0 1-1.125-1.125v-8.25ZM3.75 16.125c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 0 1-1.125-1.125v-2.25Z" />
             </svg>
-            <p className="text-sm font-medium text-slate-600">No groups yet</p>
-            <p className="text-[11px] text-slate-400 mt-1">Create your first group to organize devices</p>
+            <p className="text-sm font-medium text-slate-600">No {labels.groups.toLowerCase()} yet</p>
+            <p className="text-[11px] text-slate-400 mt-1">Create your first {labels.group.toLowerCase()} to organize {labels.devices.toLowerCase()}</p>
           </div>
         )}
       </div>

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
-from app.database import get_client, NAMESPACE
+from app.database import get_client, get_namespace
 from app.agent.workflow import create_investigation_workflow, run_investigation_sync
 
 router = APIRouter(tags=["investigations"])
@@ -24,7 +24,7 @@ def _get_workflow():
         with _workflow_lock:
             if _workflow is None:
                 client = get_client()
-                _workflow = create_investigation_workflow(client, NAMESPACE)
+                _workflow = create_investigation_workflow(client, get_namespace())
     return _workflow
 
 
@@ -73,7 +73,7 @@ def _run_in_background(inv_id: str, alert_id: str, device_id: str):
         # Mark as failed
         try:
             client = get_client()
-            key = (NAMESPACE, INV_SET, inv_id)
+            key = (get_namespace(), INV_SET, inv_id)
             client.put(key, {
                 "status": "failed",
                 "root_cause": f"Investigation failed: {str(e)}",
@@ -98,7 +98,7 @@ async def start_investigation(body: dict):
     # Get device name
     device_name = ""
     try:
-        _, _, dev = client.get((NAMESPACE, "devices", device_id))
+        _, _, dev = client.get((get_namespace(), "devices", device_id))
         device_name = dev.get("name", "")
     except Exception:
         pass
@@ -120,7 +120,7 @@ async def start_investigation(body: dict):
         "created_at": now,
         "completed_at": "",
     }
-    client.put((NAMESPACE, INV_SET, inv_id), bins)
+    client.put((get_namespace(), INV_SET, inv_id), bins)
 
     # Start background thread
     thread = threading.Thread(target=_run_in_background, args=(inv_id, alert_id, device_id), daemon=True)
@@ -133,7 +133,7 @@ async def start_investigation(body: dict):
 async def get_investigation(inv_id: str, trace: bool = False):
     client = get_client()
     try:
-        _, _, bins = client.get((NAMESPACE, INV_SET, inv_id))
+        _, _, bins = client.get((get_namespace(), INV_SET, inv_id))
         return _inv_bins_to_dict(bins, include_trace=trace)
     except Exception:
         raise HTTPException(status_code=404, detail="Investigation not found")
@@ -142,7 +142,7 @@ async def get_investigation(inv_id: str, trace: bool = False):
 @router.get("/investigations")
 async def list_investigations(device_id: str = ""):
     client = get_client()
-    query = client.query(NAMESPACE, INV_SET)
+    query = client.query(get_namespace(), INV_SET)
     results = []
 
     def callback(record):

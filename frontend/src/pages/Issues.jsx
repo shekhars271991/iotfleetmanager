@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api/client'
+import { useShowcase } from '../context/ShowcaseContext'
 import InvestigationTrace from '../components/InvestigationTrace'
 
 function timeAgo(dateStr) {
@@ -89,6 +90,7 @@ function groupAlerts(rawAlerts) {
 }
 
 export default function Alerts() {
+  const { labels } = useShowcase()
   const [rawAlerts, setRawAlerts] = useState([])
   const [devices, setDevices] = useState({})
   const [investigations, setInvestigations] = useState([])
@@ -207,7 +209,7 @@ export default function Alerts() {
   return (
     <div className="p-8 space-y-6 max-w-[1400px]">
       <div>
-        <h2 className="text-2xl font-semibold text-slate-800 tracking-tight">Alerts</h2>
+        <h2 className="text-2xl font-semibold text-slate-800 tracking-tight">{labels.alerts}</h2>
         <p className="text-sm text-slate-500 mt-0.5">Fleet-wide alert management and AI investigation</p>
       </div>
 
@@ -234,7 +236,7 @@ export default function Alerts() {
                 <span className="absolute -top-1.5 -right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white animate-pulse" />
               )}
             </span>
-            Alerts
+            {labels.alerts}
             {activeCount > 0 && (
               <span className="ml-1 text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">{activeCount}</span>
             )}
@@ -251,7 +253,7 @@ export default function Alerts() {
                 <span className="absolute -top-1.5 -right-1.5 w-2.5 h-2.5 bg-violet-500 rounded-full ring-2 ring-white animate-pulse" />
               )}
             </span>
-            Investigations
+            {labels.investigations}
             {investigations.length > 0 && (
               <span className="ml-1 text-[10px] font-bold bg-slate-200 text-slate-600 rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">{investigations.length}</span>
             )}
@@ -277,8 +279,8 @@ export default function Alerts() {
 
                 <span className="w-px h-5 bg-slate-200 mx-1" />
                 <button onClick={() => setScopeFilter('')} className={filterBtn(scopeFilter === '')}>Any Scope</button>
-                <button onClick={() => setScopeFilter('group')} className={filterBtn(scopeFilter === 'group')}>Group</button>
-                <button onClick={() => setScopeFilter('device')} className={filterBtn(scopeFilter === 'device')}>Device</button>
+                <button onClick={() => setScopeFilter('group')} className={filterBtn(scopeFilter === 'group')}>{labels.group}</button>
+                <button onClick={() => setScopeFilter('device')} className={filterBtn(scopeFilter === 'device')}>{labels.device}</button>
 
                 <span className="ml-auto text-[11px] text-slate-400 font-medium">{filtered.length} alert{filtered.length !== 1 ? 's' : ''}</span>
               </div>
@@ -391,7 +393,7 @@ export default function Alerts() {
               {investigations.length === 0 ? (
                 <div className="py-12 text-center">
                   <SparkleIcon className="w-10 h-10 text-slate-200 mx-auto mb-2" />
-                  <p className="text-sm font-medium text-slate-500">No investigations yet</p>
+                  <p className="text-sm font-medium text-slate-500">No {labels.investigations.toLowerCase()} yet</p>
                   <p className="text-[12px] text-slate-400 mt-0.5">Click "Investigate" on any alert to start an AI analysis</p>
                 </div>
               ) : (
@@ -435,7 +437,7 @@ export default function Alerts() {
                       <div className="flex items-center justify-center h-64 text-center">
                         <div>
                           <SparkleIcon className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                          <p className="text-[13px] text-slate-400">Select an investigation to view details</p>
+                          <p className="text-[13px] text-slate-400">Select an {labels.investigation.toLowerCase()} to view details</p>
                         </div>
                       </div>
                     )}

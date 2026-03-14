@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
-from app.database import get_client, NAMESPACE
+from app.database import get_client, get_namespace
 from app.schemas import GroupCreate, GroupUpdate, GroupOut
 
 router = APIRouter(tags=["groups"])
@@ -13,7 +13,7 @@ SET_NAME = "groups"
 @router.get("/groups", response_model=list[GroupOut])
 async def list_groups():
     client = get_client()
-    query = client.query(NAMESPACE, SET_NAME)
+    query = client.query(get_namespace(), SET_NAME)
     results = []
 
     def callback(record):
@@ -33,7 +33,7 @@ async def list_groups():
 async def create_group(group: GroupCreate):
     client = get_client()
     group_id = str(uuid.uuid4())
-    key = (NAMESPACE, SET_NAME, group_id)
+    key = (get_namespace(), SET_NAME, group_id)
     bins = {
         "id": group_id,
         "name": group.name,
@@ -46,7 +46,7 @@ async def create_group(group: GroupCreate):
 @router.put("/groups/{group_id}", response_model=GroupOut)
 async def update_group(group_id: str, group: GroupUpdate):
     client = get_client()
-    key = (NAMESPACE, SET_NAME, group_id)
+    key = (get_namespace(), SET_NAME, group_id)
     try:
         _, _, existing = client.get(key)
     except Exception:
@@ -67,7 +67,7 @@ async def update_group(group_id: str, group: GroupUpdate):
 @router.delete("/groups/{group_id}", status_code=204)
 async def delete_group(group_id: str):
     client = get_client()
-    key = (NAMESPACE, SET_NAME, group_id)
+    key = (get_namespace(), SET_NAME, group_id)
     try:
         client.remove(key)
     except Exception:

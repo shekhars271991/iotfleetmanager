@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
-from app.database import get_client, NAMESPACE
+from app.database import get_client, get_namespace
 from app.schemas import AggJobOut, AggResultOut
 
 router = APIRouter(tags=["aggregations"])
@@ -77,7 +77,7 @@ async def get_meta():
 @router.get("/groups/{group_id}/aggregations", response_model=list[AggJobOut])
 async def list_jobs(group_id: str):
     client = get_client()
-    query = client.query(NAMESPACE, AGG_SET)
+    query = client.query(get_namespace(), AGG_SET)
     results = []
 
     def callback(record):
@@ -119,14 +119,14 @@ async def create_job(group_id: str, body: dict):
         "enabled": 1,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    client.put((NAMESPACE, AGG_SET, job_id), bins)
+    client.put((get_namespace(), AGG_SET, job_id), bins)
     return _job_bins_to_out(bins)
 
 
 @router.put("/aggregations/{job_id}/toggle", response_model=AggJobOut)
 async def toggle_job(job_id: str):
     client = get_client()
-    key = (NAMESPACE, AGG_SET, job_id)
+    key = (get_namespace(), AGG_SET, job_id)
     try:
         _, _, bins = client.get(key)
     except Exception:
@@ -140,14 +140,14 @@ async def toggle_job(job_id: str):
 @router.delete("/aggregations/{job_id}", status_code=204)
 async def delete_job(job_id: str):
     client = get_client()
-    key = (NAMESPACE, AGG_SET, job_id)
+    key = (get_namespace(), AGG_SET, job_id)
     try:
         client.remove(key)
     except Exception:
         raise HTTPException(status_code=404, detail="Job not found")
 
     # Clean up results for this job
-    query = client.query(NAMESPACE, AGG_RESULT_SET)
+    query = client.query(get_namespace(), AGG_RESULT_SET)
     to_delete = []
 
     def callback(record):
@@ -166,7 +166,7 @@ async def delete_job(job_id: str):
 @router.get("/groups/{group_id}/aggregations/results", response_model=list[AggResultOut])
 async def get_group_results(group_id: str):
     client = get_client()
-    query = client.query(NAMESPACE, AGG_RESULT_SET)
+    query = client.query(get_namespace(), AGG_RESULT_SET)
     results = []
 
     def callback(record):
@@ -184,7 +184,7 @@ async def get_device_results(device_id: str):
 
     # Find which group this device belongs to
     try:
-        _, _, dev_bins = client.get((NAMESPACE, "devices", device_id))
+        _, _, dev_bins = client.get((get_namespace(), "devices", device_id))
     except Exception:
         raise HTTPException(status_code=404, detail="Device not found")
 
@@ -192,7 +192,7 @@ async def get_device_results(device_id: str):
     if not group_id:
         return []
 
-    query = client.query(NAMESPACE, AGG_RESULT_SET)
+    query = client.query(get_namespace(), AGG_RESULT_SET)
     results = []
 
     def callback(record):

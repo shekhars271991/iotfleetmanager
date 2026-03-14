@@ -17,9 +17,32 @@ from kafka.errors import NoBrokersAvailable
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9094")
 AEROSPIKE_HOST = os.getenv("AEROSPIKE_HOST", "localhost")
 AEROSPIKE_PORT = int(os.getenv("AEROSPIKE_PORT", "3000"))
-NAMESPACE = os.getenv("AEROSPIKE_NAMESPACE", "iotfleet")
+CONFIG_NAMESPACE = "iotfleet"
 TOPIC = "iot-telemetry"
 SIM_SET = "simulations"
+
+_active_ns = "iotfleet"
+_ns_last_checked = 0
+NS_CHECK_INTERVAL = 30
+
+
+def get_active_namespace(as_client):
+    """Read showcase mode from config and return the appropriate namespace."""
+    try:
+        _, _, bins = as_client.get((CONFIG_NAMESPACE, "config", "showcase_mode"))
+        mode = bins.get("value", "iot")
+        return {"iot": "iotfleet", "security": "secfleet"}.get(mode, "iotfleet")
+    except Exception:
+        return "iotfleet"
+
+
+def refresh_namespace(as_client):
+    global _active_ns, _ns_last_checked
+    now = time.time()
+    if now - _ns_last_checked > NS_CHECK_INTERVAL:
+        _active_ns = get_active_namespace(as_client)
+        _ns_last_checked = now
+    return _active_ns
 
 
 def connect_kafka():
@@ -45,7 +68,7 @@ def connect_aerospike():
 
 
 def load_active_simulations(as_client):
-    query = as_client.query(NAMESPACE, SIM_SET)
+    query = as_client.query(_active_ns, SIM_SET)
     sims = []
     def cb(record):
         _, _, bins = record
@@ -79,7 +102,7 @@ def get_device(as_client, device_id):
         return _device_cache[device_id]
 
     try:
-        _, _, bins = as_client.get((NAMESPACE, "devices", device_id))
+        _, _, bins = as_client.get((_active_ns, "devices", device_id))
         dev = {
             "id": bins.get("id", device_id),
             "type": bins.get("type", "sensor"),
@@ -93,7 +116,7 @@ def get_device(as_client, device_id):
 
 
 def update_sim_stats(as_client, sim_id, sent, cycle_count):
-    key = (NAMESPACE, SIM_SET, sim_id)
+    key = (_active_ns, SIM_SET, sim_id)
     try:
         _, _, bins = as_client.get(key)
         bins["msgs_sent"] = bins.get("msgs_sent", 0) + sent
@@ -108,7 +131,7 @@ _total_msgs = 0
 def write_heartbeat(as_client, sent_this_cycle=0):
     global _total_msgs
     _total_msgs += sent_this_cycle
-    key = (NAMESPACE, "config", "hb_producer")
+    key = (CONFIG_NAMESPACE, "config", "hb_producer")
     try:
         as_client.put(key, {
             "id": "hb_producer",
@@ -120,7 +143,7 @@ def write_heartbeat(as_client, sent_this_cycle=0):
 
 
 def set_device_status(as_client, device_id, status):
-    key = (NAMESPACE, "devices", device_id)
+    key = (_active_ns, "devices", device_id)
     try:
         as_client.put(key, {"status": status, "last_seen": datetime.now(timezone.utc).isoformat()})
     except Exception:
@@ -182,7 +205,43 @@ ANOMALY_RANGES = {
     "lux": (0.0, 5.0),
 }
 
-INT_METRICS = {"battery_pct", "uplink_kbps", "position", "fps", "lux"}
+SECURITY_NORMAL_RANGES = {
+    "failed_logins": (0.0, 3.0),
+    "network_anomalies": (0.0, 15.0),
+    "port_scans": (0.0, 2.0),
+    "malware_detections": (0.0, 0.0),
+    "firewall_blocks": (5.0, 30.0),
+    "auth_failures": (0.0, 5.0),
+    "data_transfer_mb": (1.0, 50.0),
+    "cpu_usage": (10.0, 60.0),
+    "mem_usage": (20.0, 70.0),
+}
+
+SECURITY_STRESS_RANGES = {
+    "failed_logins": (50.0, 200.0),
+    "network_anomalies": (70.0, 100.0),
+    "port_scans": (20.0, 100.0),
+    "malware_detections": (2.0, 10.0),
+    "firewall_blocks": (200.0, 1000.0),
+    "auth_failures": (30.0, 100.0),
+    "data_transfer_mb": (300.0, 1500.0),
+    "cpu_usage": (85.0, 100.0),
+    "mem_usage": (80.0, 98.0),
+}
+
+SECURITY_ANOMALY_RANGES = {
+    "failed_logins": (100.0, 500.0),
+    "network_anomalies": (80.0, 100.0),
+    "port_scans": (50.0, 300.0),
+    "malware_detections": (5.0, 20.0),
+    "firewall_blocks": (500.0, 2000.0),
+    "auth_failures": (50.0, 200.0),
+    "data_transfer_mb": (500.0, 2000.0),
+    "cpu_usage": (92.0, 100.0),
+    "mem_usage": (90.0, 100.0),
+}
+
+INT_METRICS = {"battery_pct", "uplink_kbps", "position", "fps", "lux", "failed_logins", "port_scans", "malware_detections", "firewall_blocks", "auth_failures"}
 
 
 def _gen_value(metric, lo, hi):
@@ -198,7 +257,11 @@ def _lerp(lo1, hi1, lo2, hi2, factor):
 
 
 def _fallback_metric(device_type):
-    defaults = {"sensor": "temp", "gateway": "cpu_usage", "actuator": "position", "camera": "fps"}
+    defaults = {
+        "sensor": "temp", "gateway": "cpu_usage", "actuator": "position", "camera": "fps",
+        "server": "cpu_usage", "workstation": "failed_logins", "firewall": "firewall_blocks",
+        "router": "network_anomalies", "switch": "port_scans", "endpoint": "auth_failures",
+    }
     return defaults.get(device_type, "temp")
 
 
@@ -208,24 +271,24 @@ def _fallback_metric(device_type):
 
 def gen_normal(device):
     metric = device.get("metric_type") or _fallback_metric(device["type"])
-    lo, hi = NORMAL_RANGES.get(metric, (0, 100))
+    lo, hi = SECURITY_NORMAL_RANGES.get(metric, NORMAL_RANGES.get(metric, (0, 100)))
     return metric, _gen_value(metric, lo, hi)
 
 
 def gen_anomaly(device, anomaly_rate):
     metric = device.get("metric_type") or _fallback_metric(device["type"])
     if random.random() * 100 < anomaly_rate:
-        lo, hi = ANOMALY_RANGES.get(metric, STRESS_RANGES.get(metric, (0, 100)))
+        lo, hi = SECURITY_ANOMALY_RANGES.get(metric, ANOMALY_RANGES.get(metric, STRESS_RANGES.get(metric, (0, 100))))
     else:
-        lo, hi = NORMAL_RANGES.get(metric, (0, 100))
+        lo, hi = SECURITY_NORMAL_RANGES.get(metric, NORMAL_RANGES.get(metric, (0, 100)))
     return metric, _gen_value(metric, lo, hi)
 
 
 def gen_stress(device, intensity):
     metric = device.get("metric_type") or _fallback_metric(device["type"])
     factor = max(0.5, min(1.0, intensity / 100.0))
-    n_lo, n_hi = NORMAL_RANGES.get(metric, (0, 100))
-    s_lo, s_hi = STRESS_RANGES.get(metric, (0, 100))
+    n_lo, n_hi = SECURITY_NORMAL_RANGES.get(metric, NORMAL_RANGES.get(metric, (0, 100)))
+    s_lo, s_hi = SECURITY_STRESS_RANGES.get(metric, STRESS_RANGES.get(metric, (0, 100)))
     lo, hi = _lerp(n_lo, n_hi, s_lo, s_hi, factor)
     return metric, _gen_value(metric, lo, hi)
 
@@ -233,8 +296,8 @@ def gen_stress(device, intensity):
 def gen_degradation(device, degrade_rate, cycle):
     metric = device.get("metric_type") or _fallback_metric(device["type"])
     factor = min(1.0, cycle * degrade_rate / 1000.0)
-    n_lo, n_hi = NORMAL_RANGES.get(metric, (0, 100))
-    s_lo, s_hi = STRESS_RANGES.get(metric, (0, 100))
+    n_lo, n_hi = SECURITY_NORMAL_RANGES.get(metric, NORMAL_RANGES.get(metric, (0, 100)))
+    s_lo, s_hi = SECURITY_STRESS_RANGES.get(metric, STRESS_RANGES.get(metric, (0, 100)))
     lo, hi = _lerp(n_lo, n_hi, s_lo, s_hi, factor)
     return metric, _gen_value(metric, lo, hi)
 
@@ -260,6 +323,7 @@ def main():
 
     while True:
         try:
+            refresh_namespace(as_client)
             sims = load_active_simulations(as_client)
         except Exception as e:
             print(f"Error loading simulations: {e}")
@@ -302,6 +366,12 @@ def main():
                     metric, value = gen_degradation(device, cfg.get("degrade_rate", 5), cycle)
                 elif template == "intermittent":
                     metric, value = gen_intermittent(device, cfg.get("offline_pct", 20), as_client)
+                elif template in ("brute_force", "port_scan", "ddos"):
+                    metric, value = gen_stress(device, cfg.get("intensity", 70))
+                elif template == "malware":
+                    metric, value = gen_anomaly(device, cfg.get("spread_rate", 40))
+                elif template == "exfiltration":
+                    metric, value = gen_stress(device, cfg.get("volume_mb", 500) / 20.0)
 
                 if metric is not None and value is not None:
                     ts = datetime.now(timezone.utc).isoformat()

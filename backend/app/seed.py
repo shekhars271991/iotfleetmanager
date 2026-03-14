@@ -4,7 +4,7 @@ import uuid
 import random
 from datetime import datetime, timezone, timedelta
 
-from app.database import get_client, NAMESPACE
+from app.database import get_client, get_namespace
 
 
 def _ts(days_ago: int = 0, hours_ago: int = 0) -> str:
@@ -15,7 +15,7 @@ def seed():
     client = get_client()
 
     # Check if already seeded
-    query = client.query(NAMESPACE, "devices")
+    query = client.query(get_namespace(), "devices")
     existing = []
     query.foreach(lambda r: existing.append(1))
     if existing:
@@ -30,7 +30,7 @@ def seed():
         {"id": str(uuid.uuid4()), "name": "Office Building", "description": "Office HVAC and security cameras"},
     ]
     for g in groups:
-        client.put((NAMESPACE, "groups", g["id"]), g)
+        client.put((get_namespace(), "groups", g["id"]), g)
     print(f"Seeded {len(groups)} groups.")
 
     # --- Devices ---
@@ -88,7 +88,7 @@ def seed():
             "last_seen": last_seen,
             "created_at": _ts(days_ago=30 + i),
         }
-        client.put((NAMESPACE, "devices", device["id"]), device)
+        client.put((get_namespace(), "devices", device["id"]), device)
         devices.append(device)
 
     print(f"Seeded {len(devices)} devices.")
@@ -119,7 +119,7 @@ def seed():
                 "created_at": _ts(hours_ago=random.randint(0, 48)),
                 "acknowledged": 0,
             }
-            client.put((NAMESPACE, "alerts", alert["id"]), alert)
+            client.put((get_namespace(), "alerts", alert["id"]), alert)
             alerts.append(alert)
 
     print(f"Seeded {len(alerts)} alerts.")

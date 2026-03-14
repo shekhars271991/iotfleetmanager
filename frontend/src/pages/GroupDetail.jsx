@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import api from '../api/client'
+import { useShowcase } from '../context/ShowcaseContext'
 import StatusBadge from '../components/StatusBadge'
 import RulesPanel from '../components/RulesPanel'
 
@@ -47,23 +48,24 @@ const METRIC_COLORS = {
   unassigned: 'bg-slate-50 text-slate-500 border-slate-200',
 }
 
-const TABS = [
+const TABS = (labels) => [
   { id: 'overview', label: 'Overview', icon: (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" /></svg>
   )},
-  { id: 'devices', label: 'Devices', icon: (
+  { id: 'devices', label: labels.devices, icon: (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M8.288 15.038a5.25 5.25 0 0 1 7.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 0 1 1.06 0Z" /></svg>
   )},
   { id: 'aggregations', label: 'Aggregations', icon: (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
   )},
-  { id: 'rules', label: 'Alert Rules', icon: (
+  { id: 'rules', label: `${labels.alert} ${labels.rules}`, icon: (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
   )},
 ]
 
 export default function GroupDetail() {
   const { id } = useParams()
+  const { labels } = useShowcase()
   const navigate = useNavigate()
   const [group, setGroup] = useState(null)
   const [devices, setDevices] = useState([])
@@ -174,7 +176,7 @@ export default function GroupDetail() {
       {/* Tabbed Content */}
       <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm">
         <nav className="flex border-b border-slate-100 px-2">
-          {TABS.map(tab => (
+          {TABS(labels).map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -200,10 +202,10 @@ export default function GroupDetail() {
             <div className="space-y-5">
               {editing && (
                 <form onSubmit={handleSave} className="space-y-4">
-                  <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Edit Group</h4>
+                  <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Edit {labels.group}</h4>
                   <div className="flex gap-4 items-end">
                     <div className="flex-1">
-                      <label className="block text-[13px] font-medium text-slate-600 mb-1.5">Group Name</label>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1.5">{labels.group} Name</label>
                       <input value={editForm.name} onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))} required className={inputCls} />
                     </div>
                     <div className="flex-1">
@@ -236,7 +238,7 @@ export default function GroupDetail() {
                   </div>
 
                   {/* Sensor Subgroups */}
-                  <SensorSubgroups activeDevices={activeDevices} aggResults={aggResults} />
+                  <SensorSubgroups activeDevices={activeDevices} aggResults={aggResults} labels={labels} />
                 </>
               )}
             </div>
@@ -245,9 +247,9 @@ export default function GroupDetail() {
           {/* ===== DEVICES ===== */}
           {activeTab === 'devices' && (
             <div className="space-y-4">
-              <DeviceTable title={`Active Devices (${activeDevices.length})`} devices={activeDevices} />
+              <DeviceTable title={`Active ${labels.devices} (${activeDevices.length})`} devices={activeDevices} labels={labels} />
               {decommissionedDevices.length > 0 && (
-                <DeviceTable title={`Decommissioned (${decommissionedDevices.length})`} devices={decommissionedDevices} muted />
+                <DeviceTable title={`Decommissioned (${decommissionedDevices.length})`} devices={decommissionedDevices} muted labels={labels} />
               )}
             </div>
           )}
@@ -291,7 +293,7 @@ function StatCard({ label, value, color }) {
 }
 
 
-function SensorSubgroups({ activeDevices, aggResults }) {
+function SensorSubgroups({ activeDevices, aggResults, labels }) {
   const subgroups = {}
   activeDevices.forEach(d => {
     const mt = d.metric_type || 'unassigned'
@@ -320,7 +322,7 @@ function SensorSubgroups({ activeDevices, aggResults }) {
             <div key={mt} className={`rounded-lg border p-4 ${cls}`}>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[13px] font-semibold">{METRIC_LABELS[mt] || mt}</span>
-                <span className="text-[11px] font-medium opacity-70">{devs.length} devices</span>
+                <span className="text-[11px] font-medium opacity-70">{devs.length} {labels?.devices || 'devices'}</span>
               </div>
               <div className="flex items-center gap-3 text-[11px] opacity-80">
                 <span>{onlineCount} online</span>
@@ -487,7 +489,7 @@ function AggregationsTab({ groupId, aggMeta, aggJobs, setAggJobs, aggResults, se
 }
 
 
-function DeviceTable({ title, devices, muted }) {
+function DeviceTable({ title, devices, muted, labels }) {
   return (
     <div className={muted ? 'opacity-75' : ''}>
       <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">{title}</h4>
@@ -496,7 +498,7 @@ function DeviceTable({ title, devices, muted }) {
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50">
-                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Device ID</th>
+                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{labels?.device || 'Device'} ID</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Name</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Type</th>
                 <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Metric</th>
@@ -540,7 +542,7 @@ function DeviceTable({ title, devices, muted }) {
         </div>
       ) : (
         <div className="py-10 text-center">
-          <p className="text-sm text-slate-400">No devices</p>
+          <p className="text-sm text-slate-400">No {labels?.devices || 'devices'}</p>
         </div>
       )}
     </div>

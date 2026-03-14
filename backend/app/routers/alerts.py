@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.database import get_client, NAMESPACE
+from app.database import get_client, get_namespace
 from app.schemas import AlertOut
 
 router = APIRouter(tags=["alerts"])
@@ -11,7 +11,7 @@ SET_NAME = "alerts"
 @router.get("/alerts", response_model=list[AlertOut])
 async def list_alerts(device_id: str = "", limit: int = 0):
     client = get_client()
-    query = client.query(NAMESPACE, SET_NAME)
+    query = client.query(get_namespace(), SET_NAME)
     results = []
 
     def callback(record):
@@ -46,7 +46,7 @@ async def acknowledge_alerts_bulk(body: dict):
     count = 0
     for aid in alert_ids:
         try:
-            key = (NAMESPACE, SET_NAME, aid)
+            key = (get_namespace(), SET_NAME, aid)
             _, _, bins = client.get(key)
             if not bins.get("acknowledged"):
                 bins["acknowledged"] = 1
@@ -60,7 +60,7 @@ async def acknowledge_alerts_bulk(body: dict):
 @router.put("/alerts/{alert_id}/acknowledge", response_model=AlertOut)
 async def acknowledge_alert(alert_id: str):
     client = get_client()
-    key = (NAMESPACE, SET_NAME, alert_id)
+    key = (get_namespace(), SET_NAME, alert_id)
     try:
         _, _, bins = client.get(key)
     except Exception:

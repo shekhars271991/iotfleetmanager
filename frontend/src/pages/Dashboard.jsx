@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api/client'
+import { useShowcase } from '../context/ShowcaseContext'
 
 const METRIC_COLORS = [
   'bg-blue-500', 'bg-violet-500', 'bg-cyan-500', 'bg-orange-500',
@@ -14,6 +15,7 @@ const SEVERITY_CFG = {
 }
 
 export default function Dashboard() {
+  const { mode, config, labels } = useShowcase()
   const [stats, setStats] = useState(null)
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -61,7 +63,7 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-800 tracking-tight">Dashboard</h2>
+          <h2 className="text-2xl font-semibold text-slate-800 tracking-tight">{config.label} Dashboard</h2>
           <p className="text-sm text-slate-500 mt-0.5">Fleet overview and system health</p>
         </div>
         <div className="text-[11px] text-slate-400 bg-slate-100 px-3 py-1.5 rounded-lg font-medium">
@@ -71,11 +73,11 @@ export default function Dashboard() {
 
       {/* Top Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <MiniStat label="Total Devices" value={s.total || 0} icon={<DeviceIcon />} color="blue" />
+        <MiniStat label={`Total ${labels.devices}`} value={s.total || 0} icon={<DeviceIcon />} color="blue" />
         <MiniStat label="Online" value={s.online || 0} icon={<OnlineIcon />} color="emerald" />
         <MiniStat label="Offline" value={s.offline || 0} icon={<OfflineIcon />} color="red" />
-        <MiniStat label="Unack. Alerts" value={alertsSummary.unacknowledged || 0} icon={<AlertIcon />} color="amber" link="/alerts" />
-        <MiniStat label="Investigations" value={invSummary.total || 0} icon={<InvIcon />} color="violet" sub={invSummary.running ? `${invSummary.running} running` : null} />
+        <MiniStat label={`Unack. ${labels.alerts}`} value={alertsSummary.unacknowledged || 0} icon={<AlertIcon />} color="amber" link="/alerts" />
+        <MiniStat label={labels.investigations} value={invSummary.total || 0} icon={<InvIcon />} color="violet" sub={invSummary.running ? `${invSummary.running} running` : null} />
       </div>
 
       {/* Row 2: Status + Alert Severity + Metric Types */}
@@ -112,7 +114,7 @@ export default function Dashboard() {
         </Panel>
 
         {/* Alert Severity */}
-        <Panel title="Alerts by Severity" action={<Link to="/alerts" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">View All</Link>}>
+        <Panel title={`${labels.alerts} by Severity`} action={<Link to="/alerts" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">View All</Link>}>
           {Object.keys(bySev).length > 0 ? (
             <div className="space-y-3">
               {['critical', 'warning', 'info'].filter(sev => bySev[sev]).map(sev => {
@@ -139,7 +141,7 @@ export default function Dashboard() {
         </Panel>
 
         {/* Device Types */}
-        <Panel title="Device Types">
+        <Panel title={`${labels.device} Types`}>
           <div className="space-y-3">
             {s.by_type && Object.entries(s.by_type).sort((a, b) => b[1] - a[1]).map(([type, count]) => {
               const pct = Math.round((count / maxType) * 100)
@@ -162,7 +164,7 @@ export default function Dashboard() {
       {/* Row 3: Investigations + Rules/Simulations + Recent Alerts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* AI Investigations */}
-        <Panel title="AI Investigations" action={<Link to="/alerts" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">View All</Link>}>
+        <Panel title={`AI ${labels.investigations}`} action={<Link to="/alerts" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">View All</Link>}>
           <div className="grid grid-cols-2 gap-3 mb-4">
             <StatTile label="Completed" value={invSummary.completed || 0} color="emerald" />
             <StatTile label="Running" value={invSummary.running || 0} color="blue" />
@@ -210,7 +212,7 @@ export default function Dashboard() {
         </Panel>
 
         {/* Recent Alerts */}
-        <Panel title="Recent Alerts" action={<Link to="/alerts" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">View All</Link>}>
+        <Panel title={`Recent ${labels.alerts}`} action={<Link to="/alerts" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">View All</Link>}>
           {alerts.length > 0 ? (
             <div className="space-y-2">
               {alerts.map(a => {
@@ -240,8 +242,8 @@ export default function Dashboard() {
       {s.groups?.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-slate-800">Group Health</h3>
-            <Link to="/groups" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">All Groups</Link>
+            <h3 className="text-sm font-semibold text-slate-800">{labels.group} Health</h3>
+            <Link to="/groups" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">All {labels.groups}</Link>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {s.groups.map(group => {
@@ -250,7 +252,7 @@ export default function Dashboard() {
                 <Link to={`/groups/${group.id}`} key={group.id} className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-4 hover:shadow-md hover:border-indigo-200 transition-all">
                   <div className="flex items-center justify-between mb-3">
                     <h4 className="text-[13px] font-semibold text-slate-800 truncate">{group.name}</h4>
-                    <span className="text-[11px] text-slate-400">{group.total} devices</span>
+                    <span className="text-[11px] text-slate-400">{group.total} {labels.devices}</span>
                   </div>
                   <div className="w-full bg-slate-100 rounded-full h-2 mb-3">
                     <div className="h-2 rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${healthPct}%` }} />

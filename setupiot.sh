@@ -2,14 +2,13 @@
 set -euo pipefail
 
 # ===========================================================================
-# AI Investigation Demo: Cold Storage HVAC Failure
+# IoT Fleet Demo: Cold Storage HVAC Failure
 #
-# Creates a scenario where anomaly injection across correlated sensors in
-# "Cold Storage A" gives the AI agent rich data to uncover non-obvious
-# inferences (redundancy confirmation, cross-metric correlation, spatial
-# localization) that a human would miss from a single temperature alert.
+# Switches to IoT mode, creates device groups, sensors with metadata,
+# applies alert rules, and starts stress simulations. The AI agent can
+# then investigate correlated anomalies across redundant sensors.
 #
-# Usage:  ./setuptestcase.sh [--backend-url=URL]
+# Usage:  ./setupiot.sh [--backend-url=URL]
 # ===========================================================================
 
 API="${1:-http://localhost:4000}"
@@ -39,6 +38,18 @@ if ! curl -sf "$API/health" > /dev/null 2>&1; then
   fail "Backend not reachable at $API. Is dev.sh running?"
 fi
 ok "Backend is healthy"
+
+# ===========================================================================
+# Step 0: Switch to IoT mode
+# ===========================================================================
+
+step "Switching to IoT mode"
+curl -sf -X PUT "$API/api/admin/showcase-mode" \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"iot"}' > /dev/null
+ok "Mode set to IoT Fleet Management"
+
+sleep 1
 
 # ===========================================================================
 # Step 1: Clear all existing data
