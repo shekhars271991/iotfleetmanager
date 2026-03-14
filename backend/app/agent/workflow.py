@@ -549,14 +549,17 @@ def llm_agent_node(state: InvestigationState, as_client, namespace: str) -> dict
 ## YOUR TASK
 {analyze_hint}
 
-Write a concise analysis paragraph (3-6 sentences). Consider:
-- What evidence have you gathered so far?
+Write a thorough analysis paragraph (4-8 sentences). Consider:
+- What evidence have you gathered so far? Cite specific device names and readings.
 - What patterns or anomalies do you see in the data?
-- What hypotheses are supported or ruled out?
-- Is this an isolated sensor issue, environmental change, or systemic group problem?
+- What hypotheses are supported or ruled out by the evidence?
+- Is this an isolated sensor issue, an environmental change, or a systemic group problem?
+- Did redundant sensors confirm or contradict the anomaly?
+- Are there cross-metric correlations (e.g. temp rising while pressure drops)?
+- How do nearby devices in other zones compare?
 - Do you have ENOUGH evidence to reach a conclusion, or do you need more data?
 
-If you have gathered sufficient evidence (typically 3+ tool calls with meaningful data), state that you are ready to submit your conclusion.
+If you have gathered sufficient evidence (typically 3+ tool calls with meaningful data), state that you are ready to submit your conclusion with a detailed root cause.
 
 Respond with ONLY your analysis text. No JSON. No tool calls."""
 
@@ -607,11 +610,18 @@ Respond with ONLY your analysis text. No JSON. No tool calls."""
 2. Get telemetry data to understand reading patterns and ranges
 3. If the device has redundant peers, compare readings — similar anomalies = environmental; divergence = sensor fault
 4. Check nearby devices for environmental baselines
-5. Correlate different metric types (temp+humidity, cpu+memory) across nearby devices
+5. Correlate different metric types (temp+humidity, temp+pressure) across nearby devices
 6. Check for correlated alerts to identify systemic group issues
 7. Get device alerts history for pattern recognition
 8. Only submit when you have investigated at least 3-4 different data sources
-9. Provide specific, actionable root cause analysis
+
+## ROOT CAUSE REQUIREMENTS (when calling submit_analysis)
+Your root_cause MUST be 3-5 sentences minimum. It must:
+- Name specific devices and their readings as evidence (e.g. "TMP-CSA-01 read 52°C while normal baseline is 18-32°C")
+- Explain how redundant/peer sensors confirmed or contradicted the anomaly
+- Describe cross-metric correlations found (e.g. temp rise + pressure drop = air handling issue)
+- State what alternative explanations were ruled out and why (e.g. "Ruled out sensor malfunction because redundant sensor TMP-CSA-02 showed identical elevated readings")
+- Identify the systemic root cause (e.g. HVAC failure, power issue, network degradation)
 
 Respond with ONLY a JSON object:
 {{"reasoning": "brief explanation of why you chose this action", "tool": "<tool_name>", "params": {{...}}}}"""

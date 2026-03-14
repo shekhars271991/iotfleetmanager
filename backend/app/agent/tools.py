@@ -72,7 +72,7 @@ class InvestigationTools:
 
 11. submit_analysis - Submit your final analysis (CALL THIS WHEN DONE)
    params: {
-     "root_cause": "description of why the anomaly is happening",
+     "root_cause": "DETAILED root cause (3-5 sentences minimum). Explain WHAT is happening, WHY it is happening, cite specific sensor readings and device names as evidence, describe how you ruled out alternative explanations (e.g. sensor fault vs environmental event), and explain the chain of causation.",
      "corrective_actions": ["action 1", "action 2", ...],
      "confidence": "high|medium|low",
      "severity": "critical|warning|info",

@@ -20,12 +20,16 @@ OPERATORS = {
 METRICS = [
     {"key": "temp", "label": "Temperature", "unit": "°C"},
     {"key": "humidity", "label": "Humidity", "unit": "%"},
+    {"key": "pressure", "label": "Pressure", "unit": "hPa"},
     {"key": "battery_pct", "label": "Battery", "unit": "%"},
     {"key": "cpu_usage", "label": "CPU Usage", "unit": "%"},
     {"key": "mem_usage", "label": "Memory Usage", "unit": "%"},
     {"key": "storage_pct", "label": "Storage", "unit": "%"},
     {"key": "fps", "label": "FPS", "unit": ""},
     {"key": "uplink_kbps", "label": "Uplink", "unit": "kbps"},
+    {"key": "noise_db", "label": "Noise Level", "unit": "dB"},
+    {"key": "vibration", "label": "Vibration", "unit": "g"},
+    {"key": "lux", "label": "Illuminance", "unit": "lux"},
 ]
 
 RULE_TEMPLATES = [
